@@ -1,4 +1,4 @@
-name: Teardown MCaaS
+name: Clean up deployment
 
 on:
   workflow_dispatch: {}
