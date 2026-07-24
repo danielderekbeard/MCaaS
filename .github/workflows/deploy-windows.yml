@@ -27,6 +27,7 @@ jobs:
         env:
           MCAAS_POSTGRES_PASSWORD: ${{ secrets.MCAAS_POSTGRES_PASSWORD }}
           MCAAS_OPENSEARCH_PASSWORD: ${{ secrets.MCAAS_OPENSEARCH_PASSWORD }}
+          MCAAS_DJANGO_SECRET_KEY: ${{ secrets.MCAAS_DJANGO_SECRET_KEY }}
 
       - name: Deploy MCaaS stack
         run: ./scripts/deploy.ps1

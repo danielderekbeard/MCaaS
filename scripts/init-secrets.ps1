@@ -77,7 +77,9 @@ try {
             Log "No .env file found. Generating new secrets and creating .env file..."
             $env:MCAAS_POSTGRES_PASSWORD = New-RandomPassword
             $env:MCAAS_OPENSEARCH_PASSWORD = New-RandomPassword
-            Set-Content -Path $envFile -Value "MCAAS_POSTGRES_PASSWORD=$($env:MCAAS_POSTGRES_PASSWORD)`nMCAAS_OPENSEARCH_PASSWORD=$($env:MCAAS_OPENSEARCH_PASSWORD)"
+            $env:MCAAS_REDIS_PASSWORD = New-RandomPassword
+            $env:MCAAS_DJANGO_SECRET_KEY = New-RandomPassword -length 50
+            Set-Content -Path $envFile -Value "MCAAS_POSTGRES_PASSWORD=$($env:MCAAS_POSTGRES_PASSWORD)`nMCAAS_OPENSEARCH_PASSWORD=$($env:MCAAS_OPENSEARCH_PASSWORD)`nMCAAS_REDIS_PASSWORD=$($env:MCAAS_REDIS_PASSWORD)`nMCAAS_DJANGO_SECRET_KEY=$($env:MCAAS_DJANGO_SECRET_KEY)"
             Log "Successfully created .env with generated passwords. Please back this file up if you need to redeploy."
         } else {
             Log "ERROR: .env file exists but secrets are not loaded correctly or are missing."
@@ -86,10 +88,22 @@ try {
         }
     }
 
+    # Set defaults for optional secrets if not provided
+    if (-not $env:MCAAS_REDIS_PASSWORD) {
+        $env:MCAAS_REDIS_PASSWORD = 'zammad'
+        Log "Using default Redis password"
+    }
+    if (-not $env:MCAAS_DJANGO_SECRET_KEY) {
+        $env:MCAAS_DJANGO_SECRET_KEY = New-RandomPassword -length 50
+        Log "Generated Django secret key"
+        # Persist to .env so redeployments reuse the same key
+        Add-Content -Path $envFile -Value "MCAAS_DJANGO_SECRET_KEY=$($env:MCAAS_DJANGO_SECRET_KEY)"
+    }
+
     Log "Applying namespaces..."
     kubectl apply -k (Join-Path $scriptRoot '../deploy')
 
-    Log "Creating/updating PostgreSQL secret..."
+    Log "Creating/updating PostgreSQL secret in managed-it..."
     kubectl -n managed-it create secret generic mcaas-postgresql-secret `
       --from-literal=postgres-password="$env:MCAAS_POSTGRES_PASSWORD" `
       --from-literal=password="$env:MCAAS_POSTGRES_PASSWORD" `
@@ -98,6 +112,23 @@ try {
     Log "Creating/updating OpenSearch secret..."
     kubectl -n security-ops create secret generic mcaas-opensearch-secret `
       --from-literal=opensearch-password="$env:MCAAS_OPENSEARCH_PASSWORD" `
+      --from-literal=SHUFFLE_OPENSEARCH_PASSWORD="$env:MCAAS_OPENSEARCH_PASSWORD" `
+      --dry-run=client -o yaml | kubectl apply -f -
+
+    Log "Creating/updating PostgreSQL secret in grc..."
+    kubectl -n grc create secret generic mcaas-postgresql-secret `
+      --from-literal=postgres-password="$env:MCAAS_POSTGRES_PASSWORD" `
+      --from-literal=password="$env:MCAAS_POSTGRES_PASSWORD" `
+      --dry-run=client -o yaml | kubectl apply -f -
+
+    Log "Creating/updating Redis secret..."
+    kubectl -n managed-it create secret generic mcaas-zammad-redis-pass `
+      --from-literal=redis-password="$env:MCAAS_REDIS_PASSWORD" `
+      --dry-run=client -o yaml | kubectl apply -f -
+
+    Log "Creating/updating CISO Assistant Django secret..."
+    kubectl -n grc create secret generic mcaas-ciso-secret `
+      --from-literal=django-secret-key="$env:MCAAS_DJANGO_SECRET_KEY" `
       --dry-run=client -o yaml | kubectl apply -f -
 
     Log 'Secrets and namespaces are ready.'

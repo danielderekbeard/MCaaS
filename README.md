@@ -141,10 +141,11 @@ The deployment uses the following Kubernetes secrets:
 | `mcaas-postgresql-secret` | `managed-it`, `grc` | `postgres-password`, `password` | PostgreSQL auth (Bitnami key + CISO Assistant key) |
 | `mcaas-opensearch-secret` | `security-ops` | `opensearch-password`, `SHUFFLE_OPENSEARCH_PASSWORD` | OpenSearch auth (chart key + Shuffle env var) |
 | `mcaas-zammad-redis-pass` | `managed-it` | `redis-password` | Redis auth for Zammad |
+| `mcaas-ciso-secret` | `grc` | `django-secret-key` | CISO Assistant Django secret key |
 
 The PostgreSQL secret is created in both the `managed-it` and `grc` namespaces because CISO Assistant (in `grc`) needs cross-namespace access to the PostgreSQL credentials.
 
-When using `deploy.py`, secrets are created automatically via kubectl commands embedded in the script. Passwords are sourced from environment variables (`MCAAS_POSTGRES_PASSWORD`, `MCAAS_OPENSEARCH_PASSWORD`, `MCAAS_REDIS_PASSWORD`) or auto-generated and persisted to `.env`.
+When using `deploy.py`, secrets are created automatically via kubectl commands embedded in the script. Passwords are sourced from environment variables (`MCAAS_POSTGRES_PASSWORD`, `MCAAS_OPENSEARCH_PASSWORD`, `MCAAS_REDIS_PASSWORD`, `MCAAS_DJANGO_SECRET_KEY`) or auto-generated and persisted to `.env`.
 
 ## CI / GitHub Actions
 
@@ -157,6 +158,7 @@ The workflow uses the following repository secrets:
 - `MCAAS_POSTGRES_PASSWORD`
 - `MCAAS_OPENSEARCH_PASSWORD`
 - `MCAAS_REDIS_PASSWORD` (optional; defaults to `zammad`)
+- `MCAAS_DJANGO_SECRET_KEY` (optional; auto-generated if not set)
 
 ## Windows Deployment Notes
 

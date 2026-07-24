@@ -643,17 +643,25 @@ def generate_password(length=24):
 def create_secrets():
     """Create Kubernetes secrets required by the MCaaS stack.
 
-    Creates two secrets:
+    Creates five secrets:
       - ``mcaas-postgresql-secret`` in the ``managed-it`` namespace
         (keys: ``postgres-password`` for Bitnami PostgreSQL, ``password`` for
         CISO Assistant)
       - ``mcaas-opensearch-secret`` in the ``security-ops`` namespace
+        (keys: ``opensearch-password`` and ``SHUFFLE_OPENSEARCH_PASSWORD``)
+      - ``mcaas-zammad-redis-pass`` in the ``managed-it`` namespace
+        (key: ``redis-password``)
+      - ``mcaas-postgresql-secret`` in the ``grc`` namespace (for cross-namespace
+        access by CISO Assistant)
+      - ``mcaas-ciso-secret`` in the ``grc`` namespace
+        (key: ``django-secret-key`` for CISO Assistant's Django secret)
 
     Password values are sourced from environment variables
-    (``MCAAS_POSTGRES_PASSWORD`` and ``MCAAS_OPENSEARCH_PASSWORD``) which can
-    be set directly or loaded from a ``.env`` file via :func:`load_env_file`.
-    If the variables are not set, random passwords are generated and persisted
-    to the ``.env`` file for future use.
+    (``MCAAS_POSTGRES_PASSWORD``, ``MCAAS_OPENSEARCH_PASSWORD``, and
+    ``MCAAS_DJANGO_SECRET_KEY``) which can be set directly or loaded from a
+    ``.env`` file via :func:`load_env_file`. If the variables are not set,
+    random passwords are generated and persisted to the ``.env`` file for
+    future use.
     """
     env_file = PROJECT_ROOT / ".env"
 
@@ -789,6 +797,39 @@ def create_secrets():
             logging.error("Failed to apply PostgreSQL secret in grc namespace")
             raise RuntimeError("Failed to apply PostgreSQL secret in grc namespace")
         logging.info("PostgreSQL secret created/updated in grc namespace (for CISO Assistant).")
+
+    # Django secret key for CISO Assistant.
+    # The CISO Assistant Helm chart reads the Django secret from a Kubernetes
+    # secret whose name is specified in ``backend.config.djangoExistingSecretKey``.
+    # The key within that secret must be ``django-secret-key`` (chart default).
+    django_secret = os.environ.get("MCAAS_DJANGO_SECRET_KEY")
+    if not django_secret:
+        django_secret = generate_password(length=50)
+        with open(env_file, "a") as f:
+            f.write(f"\nMCAAS_DJANGO_SECRET_KEY={django_secret}\n")
+        logging.info(f"Generated MCAAS_DJANGO_SECRET_KEY and appended to {env_file}")
+
+    proc = subprocess.run(
+        ["kubectl", "-n", "grc", "create", "secret", "generic",
+         "mcaas-ciso-secret",
+         f"--from-literal=django-secret-key={django_secret}",
+         "--dry-run=client", "-o", "yaml"],
+        capture_output=True, text=True
+    )
+    if proc.returncode != 0:
+        logging.error(f"Failed to generate CISO Assistant Django secret: {proc.stderr}")
+        raise RuntimeError("Failed to create CISO Assistant Django secret")
+    if dry_run:
+        logging.info(f"Dry‑run: would apply CISO Assistant Django secret. Manifest:\n{proc.stdout}")
+    else:
+        apply_proc = subprocess.run(
+            ["kubectl", "apply", "-f", "-"],
+            input=proc.stdout, text=True
+        )
+        if apply_proc.returncode != 0:
+            logging.error("Failed to apply CISO Assistant Django secret")
+            raise RuntimeError("Failed to apply CISO Assistant Django secret")
+        logging.info("CISO Assistant Django secret created/updated in grc namespace.")
 
 def _create_database(pod_name, namespace, db_name, secret_name, secret_key):
     """Create a database in the PostgreSQL instance running in the cluster.

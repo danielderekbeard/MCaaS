@@ -5,7 +5,8 @@ global:
 backend:
   config:
     databaseType: externalPgsql
-    djangoSecretKey: "NT_7p-XsmmG9Xlt3P764PsaCUARwEjStoudSa83DKUrP_u8d67hLG69-MP9QPWcGkJg"
+    djangoSecretKey: ""  # Sourced from mcaas-ciso-secret via djangoExistingSecretKey
+    djangoExistingSecretKey: "mcaas-ciso-secret"
 externalPgsql:
   host: "mcaas-postgresql.managed-it.svc.cluster.local"
   port: 5432

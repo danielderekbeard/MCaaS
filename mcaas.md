@@ -53,6 +53,9 @@ extraEnvs:
 persistence:
 enabled: true
 size: 20Gi
+# Note: The mcaas-opensearch-secret also contains a SHUFFLE_OPENSEARCH_PASSWORD key
+# because Shuffle mounts all keys from its referenced secret as environment variables,
+# and key names must be valid env-var identifiers (no dashes).
 
 3. Specialized Cybersecurity
 Wazuh SIEM & XDR (values.yaml)
@@ -160,7 +163,8 @@ global:
 backend:
   config:
     databaseType: externalPgsql
-    djangoSecretKey: "<generated-secret-key>"
+    djangoSecretKey: ""  # Sourced from mcaas-ciso-secret via djangoExistingSecretKey
+    djangoExistingSecretKey: "mcaas-ciso-secret"
 externalPgsql:
   host: "mcaas-postgresql.managed-it.svc.cluster.local"
   port: 5432
@@ -169,3 +173,37 @@ externalPgsql:
   database: "ciso-assistant"
 ingress:
   enabled: true
+
+5. Secrets Architecture
+
+Kubernetes secrets are namespace-scoped, so services that need cross-namespace access
+require the secret to be created in each namespace.
+
+| Secret | Namespace | Keys | Used By |
+|--------|-----------|------|---------|
+| `mcaas-postgresql-secret` | `managed-it` | `postgres-password`, `password` | PostgreSQL chart, Zammad |
+| `mcaas-postgresql-secret` | `grc` | `postgres-password`, `password` | CISO Assistant |
+| `mcaas-opensearch-secret` | `security-ops` | `opensearch-password`, `SHUFFLE_OPENSEARCH_PASSWORD` | OpenSearch, Wazuh, Shuffle |
+| `mcaas-zammad-redis-pass` | `managed-it` | `redis-password` | Zammad Redis |
+| `mcaas-ciso-secret` | `grc` | `django-secret-key` | CISO Assistant Django secret |
+
+Note: The `mcaas-opensearch-secret` contains two keys because Shuffle mounts all keys from
+its referenced secret as environment variables, and key names must be valid env-var identifiers
+(no dashes). The `opensearch-password` key is used by the OpenSearch chart, and the
+`SHUFFLE_OPENSEARCH_PASSWORD` key is used by Shuffle's `extraEnvVarsSecret`.
+
+The `mcaas-ciso-secret` stores CISO Assistant's Django secret key. The value is sourced from
+the `MCAAS_DJANGO_SECRET_KEY` environment variable (or generated and persisted to `.env`
+if not set).
+
+6. Database Provisioning
+
+The deploy.py script creates databases idempotently before deploying services that need them:
+
+- `mcaas_db` — default PostgreSQL database (created by the Bitnami chart)
+- `zammad` — created before the Zammad Helm release
+- `ciso-assistant` — created before the CISO Assistant Helm release
+
+Database creation uses `kubectl exec -i` to pipe SQL via stdin rather than psql's `-c` flag.
+This avoids a Windows PowerShell quoting issue where double-quotes around hyphenated
+identifiers (e.g. `"ciso-assistant"`) are stripped during argument parsing.
