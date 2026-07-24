@@ -38,6 +38,11 @@ jobs:
           sed -i 's/^\(\s*\)certificate-authority-data:.*$/\1insecure-skip-tls-verify: true/' $HOME/.kube/config
           sed -i 's/^\(\s*\)certificate-authority:.*$/\1insecure-skip-tls-verify: true/' $HOME/.kube/config
 
+      - name: Verify cluster connectivity
+        run: |
+          kubectl cluster-info --insecure-skip-tls-verify
+          kubectl auth can-i --list --insecure-skip-tls-verify
+
       - name: Teardown MCaaS stack
         run: |
           ARGS=""

@@ -469,6 +469,9 @@ def main():
             f"Starting MCaaS teardown on {PLATFORM} (client={cfg['client_name'] or 'default'}, prefix={prefix})"
         )
 
+        # 0. Verify cluster connectivity before doing anything else
+        verify_cluster_connectivity()
+
         # 1. Uninstall Helm releases (reverse deployment order)
         logging.info("=== Uninstalling Helm releases ===")
         uninstall_helm_releases(cfg)
@@ -503,8 +506,14 @@ def main():
 
         logging.info("Teardown complete!")
 
+    except SystemExit:
+        raise  # Re-raise SystemExit (e.g. from verify_cluster_connectivity)
     except Exception as e:
         logging.error(f"An error occurred during teardown: {e}")
+        logging.error(
+            "Some resources may not have been fully cleaned up. "
+            "Re-run the teardown script to retry, or manually inspect the cluster."
+        )
         sys.exit(1)
     finally:
         logging.info(f"Logs written to {log_file}")

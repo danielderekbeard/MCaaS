@@ -51,7 +51,8 @@ jobs:
           [System.IO.File]::WriteAllText($kubeConfigPath, $yaml, [System.Text.UTF8Encoding]::new($false))
 
           # Verify kubectl can connect before proceeding
-          kubectl cluster-info
+          kubectl cluster-info --insecure-skip-tls-verify
+          kubectl auth can-i --list --insecure-skip-tls-verify
 
       - name: Teardown MCaaS stack
         run: |
