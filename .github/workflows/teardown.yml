@@ -19,10 +19,5 @@ jobs:
           $kubeDir = "$HOME\.kube"; if (-not (Test-Path $kubeDir)) { New-Item -Path $kubeDir -ItemType Directory | Out-Null }
           [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.KUBE_CONFIG_DATA }}")) | Set-Content -Path "$kubeDir\config"
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
       - name: Teardown MCaaS stack
-        run: python teardown.py
+        run: ./scripts/teardown.ps1

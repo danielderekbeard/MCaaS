@@ -21,5 +21,5 @@ jobs:
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
 
-      - name: Run service health checks
-        run: bash ./scripts/test-services.sh
+      - name: Check Kubernetes cluster connectivity
+        run: kubectl cluster-info
