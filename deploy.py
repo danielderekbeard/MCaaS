@@ -83,10 +83,17 @@ def run_command(command, check=True, shell=False, cwd=None):
         shell: Run command through shell (generally not recommended)
         cwd: Working directory for the command
     """
-    # Inject dry‑run flag for helm/kubectl when appropriate
+    # Inject dry‑run flag for helm/kubectl when appropriate. For Helm we also
+    # strip any "--wait" flag because waiting for a resource that will never be
+    # created leads to a timeout in dry‑run mode.
     if isinstance(command, list) and globals().get("DRY_RUN", False):
-        if command[0] in ("helm", "kubectl"):
-            # Avoid duplicate flags if the user already supplied one
+        if command[0] == "helm":
+            # Remove the "--wait" flag if present
+            command = [c for c in command if c != "--wait"]
+            # Append the dry‑run flag (avoid duplicates)
+            if "--dry-run=client" not in command:
+                command = command + ["--dry-run=client"]
+        elif command[0] == "kubectl":
             if "--dry-run=client" not in command:
                 command = command + ["--dry-run=client"]
 
