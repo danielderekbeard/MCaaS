@@ -102,8 +102,8 @@ def uninstall_helm_releases():
     """Uninstall all Helm releases in reverse deployment order."""
     # Releases listed in reverse deployment order
     releases = [
-        ("ciso-assistant", "grc"),
-        ("zammad", "managed-it"),
+        ("mcaas-ciso", "grc"),
+        ("mcaas-zammad", "managed-it"),
         ("mcaas-shuffle", "security-ops"),
         ("mcaas-opensearch", "security-ops"),
         ("mcaas-postgresql", "managed-it"),
@@ -144,10 +144,13 @@ def delete_wazuh_resources():
 
 
 def delete_secrets():
-    """Delete Kubernetes secrets created by the deployment."""
+    """Delete Kubernetes secrets created by the deployment (5 secrets across 3 namespaces)."""
     secrets = [
         ("mcaas-postgresql-secret", "managed-it"),
+        ("mcaas-postgresql-secret", "grc"),
         ("mcaas-opensearch-secret", "security-ops"),
+        ("mcaas-zammad-redis-pass", "managed-it"),
+        ("mcaas-ciso-ciso-assistant-backend", "grc"),
     ]
 
     for secret_name, namespace in secrets:
@@ -163,6 +166,8 @@ def delete_pvcs():
     pvc_labels = [
         ("security-ops", "app.kubernetes.io/instance=mcaas-opensearch"),
         ("managed-it", "app.kubernetes.io/instance=mcaas-postgresql"),
+        ("managed-it", "app.kubernetes.io/instance=mcaas-zammad"),
+        ("security-ops", "app.kubernetes.io/instance=mcaas-shuffle"),
     ]
 
     for namespace, label in pvc_labels:
