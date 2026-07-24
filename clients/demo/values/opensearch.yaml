@@ -1,0 +1,10 @@
+singleNode: true
+extraEnvs:
+  - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: "demo-opensearch-secret"
+        key: "opensearch-password"
+persistence:
+  enabled: true
+  size: 20Gi

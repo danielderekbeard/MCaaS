@@ -1,0 +1,11 @@
+# Wazuh is deployed via kustomize (not Helm), so this file is a reference only.
+#
+# When deploying Wazuh for the demo client, deploy.py will:
+#   1. Clone the wazuh-kubernetes repo
+#   2. Apply kustomize overlays to the demo-wazuh namespace
+#   3. Generate TLS certificates for the demo client
+#
+# Key demo-specific references that Wazuh needs:
+#   - Namespace: demo-wazuh
+#   - OpenSearch URL: https://opensearch-cluster-master.demo-security-ops.svc.cluster.local:9200
+#   - OpenSearch secret: demo-opensearch-secret

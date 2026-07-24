@@ -1,0 +1,15 @@
+client:
+  name: "demo"
+  display_name: "Demo Client"
+  domain: "demo.mcaas.example.com"
+  prefix: "demo"
+  namespaces:
+    managed-it: "demo-managed-it"
+    security-ops: "demo-security-ops"
+    grc: "demo-grc"
+    wazuh: "demo-wazuh"
+  wazuh_version: "4.14.6"
+  database_name: "demo_db"
+  ingress:
+    zammad_host: "zammad.demo.mcaas.example.com"
+    ciso_host: "ciso.demo.mcaas.example.com"

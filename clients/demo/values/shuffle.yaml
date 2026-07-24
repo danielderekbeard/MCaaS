@@ -1,0 +1,14 @@
+fullnameOverride: shuffle
+opensearch:
+  enabled: false
+backend:
+  openSearch:
+    url: "https://opensearch-cluster-master.demo-security-ops.svc.cluster.local:9200"
+    username: admin
+    skipSSLVerify: true
+  extraEnvVarsSecret: demo-opensearch-secret
+orborus:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 10Gi
