@@ -708,11 +708,16 @@ def create_secrets():
             raise RuntimeError("Failed to apply PostgreSQL secret")
         logging.info("PostgreSQL secret created/updated in managed-it namespace.")
 
-    # OpenSearch secret
+    # OpenSearch secret — includes both opensearch-password (for the OpenSearch
+    # chart) and SHUFFLE_OPENSEARCH_PASSWORD (for Shuffle's extraEnvVarsSecret).
+    # Shuffle mounts all keys from the referenced secret as environment variables;
+    # the key name must be a valid env-var identifier (no dashes), hence the
+    # separate SHUFFLE_OPENSEARCH_PASSWORD key.
     proc = subprocess.run(
         ["kubectl", "-n", "security-ops", "create", "secret", "generic",
          "mcaas-opensearch-secret",
          f"--from-literal=opensearch-password={opensearch_pw}",
+         f"--from-literal=SHUFFLE_OPENSEARCH_PASSWORD={opensearch_pw}",
          "--dry-run=client", "-o", "yaml"],
         capture_output=True, text=True
     )
@@ -730,6 +735,57 @@ def create_secrets():
             logging.error("Failed to apply OpenSearch secret")
             raise RuntimeError("Failed to apply OpenSearch secret")
         logging.info("OpenSearch secret created/updated in security-ops namespace.")
+
+def _create_database(pod_name, namespace, db_name, secret_name, secret_key):
+    """Create a database in the PostgreSQL instance running in the cluster.
+
+    Connects to the PostgreSQL pod, retrieves the password from the specified
+    Kubernetes secret, and runs ``CREATE DATABASE``.  Uses ``IF NOT EXISTS`` so
+    the call is idempotent.
+
+    Args:
+        pod_name: Name of the PostgreSQL pod (e.g. ``mcaas-postgresql-0``).
+        namespace: Namespace of the PostgreSQL pod.
+        db_name: Name of the database to create.
+        secret_name: Kubernetes secret containing the postgres password.
+        secret_key: Key within the secret that holds the password.
+    """
+    dry_run = globals().get("DRY_RUN", False)
+    if dry_run:
+        logging.info(f"Dry‑run: would create database '{db_name}' in PostgreSQL.")
+        return
+
+    logging.info(f"Ensuring database '{db_name}' exists in PostgreSQL...")
+    # Retrieve the password from the Kubernetes secret
+    pw_result = subprocess.run(
+        ["kubectl", "get", "secret", secret_name,
+         "-n", namespace,
+         "-o", f"jsonpath={{.data.{secret_key}}}"],
+        capture_output=True, text=True
+    )
+    if pw_result.returncode != 0:
+        logging.error(f"Failed to retrieve password from secret '{secret_name}': {pw_result.stderr}")
+        raise RuntimeError(f"Failed to retrieve password from secret '{secret_name}'")
+
+    import base64
+    db_password = base64.b64decode(pw_result.stdout.strip()).decode()
+
+    # Create the database (idempotent — IF NOT EXISTS)
+    result = subprocess.run(
+        ["kubectl", "exec", pod_name, "-n", namespace, "--",
+         "env", f"PGPASSWORD={db_password}", "psql", "-U", "postgres",
+         "-c", f"CREATE DATABASE \"{db_name}\";"],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        # Database may already exist — that's fine
+        if "already exists" in result.stderr:
+            logging.info(f"Database '{db_name}' already exists.")
+        else:
+            logging.warning(f"Could not create database '{db_name}': {result.stderr}")
+    else:
+        logging.info(f"Database '{db_name}' created successfully.")
+
 
 def main():
     """Main deployment logic.
@@ -763,7 +819,6 @@ def main():
         logging.info("Adding and updating Helm repositories...")
         run_command(["helm", "repo", "add", "bitnami", "https://charts.bitnami.com/bitnami"], check=False)
         run_command(["helm", "repo", "add", "opensearch", "https://opensearch-project.github.io/helm-charts"], check=False)
-        run_command(["helm", "repo", "add", "zammad", "https://zammad.github.io/zammad-helm"], check=False)
         run_command(["helm", "repo", "update"])
 
         logging.info("Deploying PostgreSQL...")
@@ -804,31 +859,38 @@ def main():
             "helm", "upgrade", "--install", "mcaas-shuffle", "oci://ghcr.io/shuffle/charts/shuffle",
             "--namespace", "security-ops",
             "--values", str(PROJECT_ROOT / "deploy" / "values" / "shuffle.yaml"),
-            "--wait", "--timeout", "8m"
+            "--wait", "--timeout", "10m"
         ])
         wait_for_resource("security-ops", "mcaas-shuffle")
 
-        logging.info("Deploying Zammad...")
+        # Create the zammad database in PostgreSQL before deploying.
+        # Zammad's init job needs this database to exist when
+        # zammadConfig.postgresql.enabled=false and an external DB is used.
+        logging.info("Creating zammad database in PostgreSQL...")
+        _create_database("mcaas-postgresql-0", "managed-it", "zammad", "mcaas-postgresql-secret", "postgres-password")
+
+        logging.info("Deploying Zammad (OCI chart)...")
         run_command([
-            "helm", "upgrade", "--install", "zammad", "zammad/zammad",
+            "helm", "upgrade", "--install", "mcaas-zammad", "oci://ghcr.io/zammad/charts/zammad",
             "--namespace", "managed-it",
             "--values", str(PROJECT_ROOT / "deploy" / "values" / "zammad.yaml"),
-            "--wait", "--timeout", "8m"
+            "--wait", "--timeout", "15m"
         ])
-        wait_for_resource("managed-it", "zammad-zammad-scheduler")
-        wait_for_resource("managed-it", "zammad-zammad-websocket")
-        wait_for_resource("managed-it", "zammad-zammad-web")
+        wait_for_resource("managed-it", "mcaas-zammad-railsserver")
 
-        logging.info("Deploying CISO Assistant...")
+        # Create the ciso-assistant database in PostgreSQL before deploying.
+        logging.info("Creating ciso-assistant database in PostgreSQL...")
+        _create_database("mcaas-postgresql-0", "managed-it", "ciso-assistant", "mcaas-postgresql-secret", "postgres-password")
+
+        logging.info("Deploying CISO Assistant (OCI chart)...")
         run_command([
-            "helm", "upgrade", "--install", "ciso-assistant", "oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant",
+            "helm", "upgrade", "--install", "mcaas-ciso", "oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant",
             "--version", "0.11.4",
             "--namespace", "grc",
             "--values", str(PROJECT_ROOT / "deploy" / "values" / "ciso-assistant.yaml"),
-            "--wait", "--timeout", "8m"
+            "--wait", "--timeout", "10m"
         ])
-        wait_for_resource("grc", "ciso-assistant-frontend")
-        wait_for_resource("grc", "ciso-assistant-backend")
+        wait_for_resource("grc", "mcaas-ciso")
 
         logging.info("Deployment complete!")
 
