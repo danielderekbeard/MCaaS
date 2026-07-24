@@ -1,0 +1,18 @@
+# =============================================================================
+# MCaaS Client PostgreSQL Values Template
+# =============================================================================
+# Replace <prefix> with the client's resource prefix (e.g., "acme")
+# Replace <db_name> with the client's database name (e.g., "acme_db")
+# =============================================================================
+
+global:
+  postgresql:
+    auth:
+      existingSecret: "<prefix>-postgresql-secret"
+      secretKeys:
+        postgresPasswordKey: "postgres-password"
+database: "<db_name>"
+primary:
+  persistence:
+    enabled: true
+    size: 10Gi

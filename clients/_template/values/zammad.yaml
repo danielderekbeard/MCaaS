@@ -1,0 +1,45 @@
+# =============================================================================
+# MCaaS Client Zammad Values Template
+# =============================================================================
+# Replace placeholders:
+#   <prefix>          → client resource prefix (e.g., "acme")
+#   <prefix-managed-it> → client's managed-it namespace (e.g., "acme-managed-it")
+#   <zammad_host>     → client's Zammad ingress host (e.g., "zammad.acme.example.com")
+# =============================================================================
+
+zammadConfig:
+  postgresql:
+    enabled: false
+    host: "<prefix>-postgresql.<prefix>-managed-it.svc.cluster.local"
+    port: 5432
+    user: "postgres"
+    pass: ""
+    db: "zammad"
+  elasticsearch:
+    enabled: false
+    initialisation: false
+  redis:
+    enabled: true
+    host: "<prefix>-zammad-redis"
+    port: 6379
+    pass: "zammad"
+secrets:
+  postgresql:
+    useExisting: true
+    secretName: "<prefix>-postgresql-secret"
+    secretKey: "postgres-password"
+  redis:
+    useExisting: true
+    secretName: "<prefix>-zammad-redis-pass"
+    secretKey: "redis-password"
+redis:
+  auth:
+    existingSecret: "<prefix>-zammad-redis-pass"
+    existingSecretPasswordKey: "redis-password"
+ingress:
+  enabled: true
+  className: "nginx"
+  hosts:
+    - host: <zammad_host>
+      paths:
+        - path: /

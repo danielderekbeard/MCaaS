@@ -1,0 +1,16 @@
+# =============================================================================
+# MCaaS Client OpenSearch Values Template
+# =============================================================================
+# Replace <prefix> with the client's resource prefix (e.g., "acme")
+# =============================================================================
+
+singleNode: true
+extraEnvs:
+  - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: "<prefix>-opensearch-secret"
+        key: "opensearch-password"
+persistence:
+  enabled: true
+  size: 20Gi

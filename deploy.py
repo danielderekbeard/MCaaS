@@ -19,6 +19,7 @@ import string
 from datetime import datetime, timezone
 from pathlib import Path
 import argparse
+import yaml
 
 # --- Configuration ---
 SCRIPT_ROOT = Path(__file__).parent.resolve()
@@ -30,6 +31,112 @@ TMP_DIR = PROJECT_ROOT / ".tmp"
 PLATFORM = platform.system()
 IS_WINDOWS = PLATFORM == "Windows"
 IS_POSIX = PLATFORM in ("Linux", "Darwin")
+
+
+# --- Default (mcaas) Configuration ---
+# When --client is NOT specified, these values are used, preserving
+# backward-compatible behaviour identical to the original hardcoded script.
+DEFAULT_CONFIG = {
+    "prefix": "mcaas",
+    "namespaces": {
+        "managed-it": "managed-it",
+        "security-ops": "security-ops",
+        "grc": "grc",
+        "wazuh": "wazuh",
+    },
+    "domain": "mcaas.example.com",
+    "database_name": "mcaas_db",
+    "wazuh_version": "4.14.6",
+    "ingress": {
+        "zammad_host": "zammad.mcaas.example.com",
+        "ciso_host": "ciso.mcaas.example.com",
+    },
+}
+
+
+def load_client_config(client_name: str | None) -> dict:
+    """Load client configuration from ``clients/<name>/config.yaml``.
+
+    When *client_name* is ``None`` (i.e. ``--client`` was not supplied) the
+    function returns :data:`DEFAULT_CONFIG` so that every caller gets a
+    consistent config dict regardless of whether multi-client mode is active.
+
+    The returned dict always contains at least:
+      - ``prefix``               – resource name prefix (e.g. ``"mcaas"`` or ``"acme"``)
+      - ``namespaces``           – mapping of base→full namespace names
+      - ``domain``               – domain suffix
+      - ``database_name``        – PostgreSQL database name
+      - ``wazuh_version``        – Wazuh version tag
+      - ``ingress``              – dict with ``zammad_host`` and ``ciso_host``
+      - ``client_name``          – the client identifier (or ``None`` for default)
+      - ``env_prefix``           – uppercase prefix for environment variables
+      - ``client_dir``           – ``Path`` to ``clients/<name>/`` or ``None``
+      - ``values_dir``           – ``Path`` to client values dir or base ``deploy/values/``
+
+    Raises :class:`SystemExit` if the config file cannot be found or parsed.
+    """
+    if client_name is None:
+        cfg = dict(DEFAULT_CONFIG)
+        cfg["client_name"] = None
+        cfg["env_prefix"] = "MCAAS"
+        cfg["client_dir"] = None
+        cfg["values_dir"] = PROJECT_ROOT / "deploy" / "values"
+        return cfg
+
+    client_dir = PROJECT_ROOT / "clients" / client_name
+    config_file = client_dir / "config.yaml"
+
+    if not config_file.exists():
+        logging.error(f"Client config not found: {config_file}")
+        logging.error(f"Create the directory clients/{client_name}/ with a config.yaml file.")
+        sys.exit(1)
+
+    logging.info(f"Loading client configuration from {config_file}")
+    with open(config_file, "r") as f:
+        raw = yaml.safe_load(f)
+
+    if not raw or "client" not in raw:
+        logging.error(f"Invalid config file: missing top-level 'client' key in {config_file}")
+        sys.exit(1)
+
+    c = raw["client"]
+
+    # Validate required fields
+    for field in ("name", "prefix", "domain", "database_name"):
+        if not c.get(field):
+            logging.error(f"Client config missing required field: client.{field}")
+            sys.exit(1)
+
+    # Build the namespaces mapping, falling back to prefix-based defaults
+    ns = c.get("namespaces", {}) or {}
+    namespaces = {
+        "managed-it": ns.get("managed-it") or f"{c['prefix']}-managed-it",
+        "security-ops": ns.get("security-ops") or f"{c['prefix']}-security-ops",
+        "grc": ns.get("grc") or f"{c['prefix']}-grc",
+        "wazuh": ns.get("wazuh") or f"{c['prefix']}-wazuh",
+    }
+
+    ingress = c.get("ingress", {}) or {}
+    zammad_host = ingress.get("zammad_host") or f"zammad.{c['domain']}"
+    ciso_host = ingress.get("ciso_host") or f"ciso.{c['domain']}"
+
+    cfg = {
+        "prefix": c["prefix"],
+        "namespaces": namespaces,
+        "domain": c["domain"],
+        "database_name": c["database_name"],
+        "wazuh_version": c.get("wazuh_version", "4.14.6"),
+        "ingress": {
+            "zammad_host": zammad_host,
+            "ciso_host": ciso_host,
+        },
+        "client_name": client_name,
+        "env_prefix": c["prefix"].upper().replace("-", "_"),
+        "client_dir": client_dir,
+        "values_dir": client_dir / "values",
+    }
+    return cfg
+
 
 # --- Logging Setup ---
 LOG_DIR.mkdir(exist_ok=True)
@@ -523,7 +630,7 @@ def clone_or_use_wazuh_repo(wazuh_dir):
     
     return wazuh_dir
 
-def deploy_wazuh(wazuh_dir):
+def deploy_wazuh(wazuh_dir, cfg):
     """Deploy Wazuh using ``kubectl apply``.
 
     The upstream Wazuh kustomization references TLS certificate files that are
@@ -538,10 +645,17 @@ def deploy_wazuh(wazuh_dir):
     Windows and POSIX platforms because the local path is under our control and
     the placeholders satisfy the kustomize ``secretGenerator`` without affecting a
     real deployment.
+
+    Args:
+        wazuh_dir: Path to the local Wazuh kubernetes repo clone (or None).
+        cfg: Client configuration dict from :func:`load_client_config`.
     """
+    wazuh_ns = cfg["namespaces"]["wazuh"]
+    wazuh_version = cfg["wazuh_version"]
+
     logging.info("Deploying Wazuh from manifests...")
 
-    remote_kustomize = "https://github.com/wazuh/wazuh-kubernetes//envs/local-env?ref=v4.14.6"
+    remote_kustomize = f"https://github.com/wazuh/wazuh-kubernetes//envs/local-env?ref=v{wazuh_version}"
 
     # Determine whether we are in dry‑run mode.
     dry_run = globals().get("DRY_RUN", False)
@@ -640,34 +754,44 @@ def generate_password(length=24):
     charset = string.ascii_letters + string.digits + "!@#$%^&*"
     return ''.join(secrets.choice(charset) for _ in range(length))
 
-def create_secrets():
+def create_secrets(cfg: dict):
     """Create Kubernetes secrets required by the MCaaS stack.
 
-    Creates five secrets:
-      - ``mcaas-postgresql-secret`` in the ``managed-it`` namespace
+    Creates five secrets (names prefixed with *cfg* prefix):
+      - ``<prefix>-postgresql-secret`` in the ``managed-it`` namespace
         (keys: ``postgres-password`` for Bitnami PostgreSQL, ``password`` for
         CISO Assistant)
-      - ``mcaas-opensearch-secret`` in the ``security-ops`` namespace
+      - ``<prefix>-opensearch-secret`` in the ``security-ops`` namespace
         (keys: ``opensearch-password`` and ``SHUFFLE_OPENSEARCH_PASSWORD``)
-      - ``mcaas-zammad-redis-pass`` in the ``managed-it`` namespace
+      - ``<prefix>-zammad-redis-pass`` in the ``managed-it`` namespace
         (key: ``redis-password``)
-      - ``mcaas-postgresql-secret`` in the ``grc`` namespace (for cross-namespace
+      - ``<prefix>-postgresql-secret`` in the ``grc`` namespace (for cross-namespace
         access by CISO Assistant)
-      - ``mcaas-ciso-secret`` in the ``grc`` namespace
+      - ``<prefix>-ciso-secret`` in the ``grc`` namespace
         (key: ``django-secret-key`` for CISO Assistant's Django secret)
 
-    Password values are sourced from environment variables
-    (``MCAAS_POSTGRES_PASSWORD``, ``MCAAS_OPENSEARCH_PASSWORD``, and
-    ``MCAAS_DJANGO_SECRET_KEY``) which can be set directly or loaded from a
-    ``.env`` file via :func:`load_env_file`. If the variables are not set,
-    random passwords are generated and persisted to the ``.env`` file for
-    future use.
+    Password values are sourced from environment variables named
+    ``<ENV_PREFIX>_POSTGRES_PASSWORD``, ``<ENV_PREFIX>_OPENSEARCH_PASSWORD``,
+    and ``<ENV_PREFIX>_DJANGO_SECRET_KEY`` (e.g. ``MCAAS_POSTGRES_PASSWORD``
+    for the default config or ``ACME_POSTGRES_PASSWORD`` for a client named
+    "acme"). These can be set directly or loaded from a ``.env`` file via
+    :func:`load_env_file`. If the variables are not set, random passwords are
+    generated and persisted to the ``.env`` file for future use.
     """
+    prefix = cfg["prefix"]
+    ns = cfg["namespaces"]
+    env_prefix = cfg["env_prefix"]
     env_file = PROJECT_ROOT / ".env"
 
+    # Environment variable names derived from the client prefix
+    env_postgres = f"{env_prefix}_POSTGRES_PASSWORD"
+    env_opensearch = f"{env_prefix}_OPENSEARCH_PASSWORD"
+    env_redis = f"{env_prefix}_REDIS_PASSWORD"
+    env_django = f"{env_prefix}_DJANGO_SECRET_KEY"
+
     # Ensure passwords exist — generate if missing
-    postgres_pw = os.environ.get("MCAAS_POSTGRES_PASSWORD")
-    opensearch_pw = os.environ.get("MCAAS_OPENSEARCH_PASSWORD")
+    postgres_pw = os.environ.get(env_postgres)
+    opensearch_pw = os.environ.get(env_opensearch)
 
     if not postgres_pw or not opensearch_pw:
         if not env_file.exists():
@@ -675,27 +799,28 @@ def create_secrets():
             postgres_pw = postgres_pw or generate_password()
             opensearch_pw = opensearch_pw or generate_password()
             env_file.write_text(
-                f"MCAAS_POSTGRES_PASSWORD={postgres_pw}\n"
-                f"MCAAS_OPENSEARCH_PASSWORD={opensearch_pw}\n"
+                f"{env_postgres}={postgres_pw}\n"
+                f"{env_opensearch}={opensearch_pw}\n"
             )
             logging.info(f"Created {env_file} with generated passwords. Back this file up for redeployments.")
         else:
             # .env exists but variables may not have been loaded properly
             if not postgres_pw:
-                logging.error("MCAAS_POSTGRES_PASSWORD is not set. Set it in your .env file or environment.")
+                logging.error(f"{env_postgres} is not set. Set it in your .env file or environment.")
                 sys.exit(1)
             if not opensearch_pw:
-                logging.error("MCAAS_OPENSEARCH_PASSWORD is not set. Set it in your .env file or environment.")
+                logging.error(f"{env_opensearch} is not set. Set it in your .env file or environment.")
                 sys.exit(1)
 
     logging.info("Creating/updating Kubernetes secrets...")
 
     dry_run = globals().get("DRY_RUN", False)
 
-    # PostgreSQL secret
+    # PostgreSQL secret (in the managed-it namespace)
+    pg_secret_name = f"{prefix}-postgresql-secret"
     proc = subprocess.run(
-        ["kubectl", "-n", "managed-it", "create", "secret", "generic",
-         "mcaas-postgresql-secret",
+        ["kubectl", "-n", ns["managed-it"], "create", "secret", "generic",
+         pg_secret_name,
          f"--from-literal=postgres-password={postgres_pw}",
          f"--from-literal=password={postgres_pw}",
          "--dry-run=client", "-o", "yaml"],
@@ -705,7 +830,7 @@ def create_secrets():
         logging.error(f"Failed to generate PostgreSQL secret manifest: {proc.stderr}")
         raise RuntimeError("Failed to create PostgreSQL secret")
     if dry_run:
-        logging.info(f"Dry‑run: would apply PostgreSQL secret. Manifest:\n{proc.stdout}")
+        logging.info(f"Dry‑run: would apply PostgreSQL secret '{pg_secret_name}'. Manifest:\n{proc.stdout}")
     else:
         apply_proc = subprocess.run(
             ["kubectl", "apply", "-f", "-"],
@@ -714,16 +839,17 @@ def create_secrets():
         if apply_proc.returncode != 0:
             logging.error("Failed to apply PostgreSQL secret")
             raise RuntimeError("Failed to apply PostgreSQL secret")
-        logging.info("PostgreSQL secret created/updated in managed-it namespace.")
+        logging.info(f"PostgreSQL secret '{pg_secret_name}' created/updated in {ns['managed-it']} namespace.")
 
     # OpenSearch secret — includes both opensearch-password (for the OpenSearch
     # chart) and SHUFFLE_OPENSEARCH_PASSWORD (for Shuffle's extraEnvVarsSecret).
     # Shuffle mounts all keys from the referenced secret as environment variables;
     # the key name must be a valid env-var identifier (no dashes), hence the
     # separate SHUFFLE_OPENSEARCH_PASSWORD key.
+    os_secret_name = f"{prefix}-opensearch-secret"
     proc = subprocess.run(
-        ["kubectl", "-n", "security-ops", "create", "secret", "generic",
-         "mcaas-opensearch-secret",
+        ["kubectl", "-n", ns["security-ops"], "create", "secret", "generic",
+         os_secret_name,
          f"--from-literal=opensearch-password={opensearch_pw}",
          f"--from-literal=SHUFFLE_OPENSEARCH_PASSWORD={opensearch_pw}",
          "--dry-run=client", "-o", "yaml"],
@@ -733,7 +859,7 @@ def create_secrets():
         logging.error(f"Failed to generate OpenSearch secret manifest: {proc.stderr}")
         raise RuntimeError("Failed to create OpenSearch secret")
     if dry_run:
-        logging.info(f"Dry‑run: would apply OpenSearch secret. Manifest:\n{proc.stdout}")
+        logging.info(f"Dry‑run: would apply OpenSearch secret '{os_secret_name}'. Manifest:\n{proc.stdout}")
     else:
         apply_proc = subprocess.run(
             ["kubectl", "apply", "-f", "-"],
@@ -742,15 +868,16 @@ def create_secrets():
         if apply_proc.returncode != 0:
             logging.error("Failed to apply OpenSearch secret")
             raise RuntimeError("Failed to apply OpenSearch secret")
-        logging.info("OpenSearch secret created/updated in security-ops namespace.")
+        logging.info(f"OpenSearch secret '{os_secret_name}' created/updated in {ns['security-ops']} namespace.")
 
     # Redis secret for Zammad (in the managed-it namespace).
     # The Zammad chart's Redis sub-chart requires a secret with the key
     # "redis-password" containing the Redis auth password.
-    redis_pw = os.environ.get("MCAAS_REDIS_PASSWORD", "zammad")
+    redis_pw = os.environ.get(env_redis, "zammad")
+    redis_secret_name = f"{prefix}-zammad-redis-pass"
     proc = subprocess.run(
-        ["kubectl", "-n", "managed-it", "create", "secret", "generic",
-         "mcaas-zammad-redis-pass",
+        ["kubectl", "-n", ns["managed-it"], "create", "secret", "generic",
+         redis_secret_name,
          f"--from-literal=redis-password={redis_pw}",
          "--dry-run=client", "-o", "yaml"],
         capture_output=True, text=True
@@ -759,7 +886,7 @@ def create_secrets():
         logging.error(f"Failed to generate Redis secret manifest: {proc.stderr}")
         raise RuntimeError("Failed to create Redis secret")
     if dry_run:
-        logging.info(f"Dry‑run: would apply Redis secret. Manifest:\n{proc.stdout}")
+        logging.info(f"Dry‑run: would apply Redis secret '{redis_secret_name}'. Manifest:\n{proc.stdout}")
     else:
         apply_proc = subprocess.run(
             ["kubectl", "apply", "-f", "-"],
@@ -768,7 +895,7 @@ def create_secrets():
         if apply_proc.returncode != 0:
             logging.error("Failed to apply Redis secret")
             raise RuntimeError("Failed to apply Redis secret")
-        logging.info("Redis secret created/updated in managed-it namespace.")
+        logging.info(f"Redis secret '{redis_secret_name}' created/updated in {ns['managed-it']} namespace.")
 
     # Cross-namespace PostgreSQL secret for CISO Assistant.
     # CISO Assistant runs in the 'grc' namespace but needs to connect to
@@ -776,42 +903,43 @@ def create_secrets():
     # namespace-scoped, so we create the same PostgreSQL secret in the 'grc'
     # namespace as well.
     proc = subprocess.run(
-        ["kubectl", "-n", "grc", "create", "secret", "generic",
-         "mcaas-postgresql-secret",
+        ["kubectl", "-n", ns["grc"], "create", "secret", "generic",
+         pg_secret_name,
          f"--from-literal=postgres-password={postgres_pw}",
          f"--from-literal=password={postgres_pw}",
          "--dry-run=client", "-o", "yaml"],
         capture_output=True, text=True
     )
     if proc.returncode != 0:
-        logging.error(f"Failed to generate PostgreSQL secret for grc namespace: {proc.stderr}")
-        raise RuntimeError("Failed to create PostgreSQL secret for grc namespace")
+        logging.error(f"Failed to generate PostgreSQL secret for {ns['grc']} namespace: {proc.stderr}")
+        raise RuntimeError(f"Failed to create PostgreSQL secret for {ns['grc']} namespace")
     if dry_run:
-        logging.info(f"Dry‑run: would apply PostgreSQL secret in grc namespace. Manifest:\n{proc.stdout}")
+        logging.info(f"Dry‑run: would apply PostgreSQL secret in {ns['grc']} namespace. Manifest:\n{proc.stdout}")
     else:
         apply_proc = subprocess.run(
             ["kubectl", "apply", "-f", "-"],
             input=proc.stdout, text=True
         )
         if apply_proc.returncode != 0:
-            logging.error("Failed to apply PostgreSQL secret in grc namespace")
-            raise RuntimeError("Failed to apply PostgreSQL secret in grc namespace")
-        logging.info("PostgreSQL secret created/updated in grc namespace (for CISO Assistant).")
+            logging.error(f"Failed to apply PostgreSQL secret in {ns['grc']} namespace")
+            raise RuntimeError(f"Failed to apply PostgreSQL secret in {ns['grc']} namespace")
+        logging.info(f"PostgreSQL secret '{pg_secret_name}' created/updated in {ns['grc']} namespace (for CISO Assistant).")
 
     # Django secret key for CISO Assistant.
     # The CISO Assistant Helm chart reads the Django secret from a Kubernetes
     # secret whose name is specified in ``backend.config.djangoExistingSecretKey``.
     # The key within that secret must be ``django-secret-key`` (chart default).
-    django_secret = os.environ.get("MCAAS_DJANGO_SECRET_KEY")
+    django_secret = os.environ.get(env_django)
     if not django_secret:
         django_secret = generate_password(length=50)
         with open(env_file, "a") as f:
-            f.write(f"\nMCAAS_DJANGO_SECRET_KEY={django_secret}\n")
-        logging.info(f"Generated MCAAS_DJANGO_SECRET_KEY and appended to {env_file}")
+            f.write(f"\n{env_django}={django_secret}\n")
+        logging.info(f"Generated {env_django} and appended to {env_file}")
 
+    ciso_secret_name = f"{prefix}-ciso-secret"
     proc = subprocess.run(
-        ["kubectl", "-n", "grc", "create", "secret", "generic",
-         "mcaas-ciso-secret",
+        ["kubectl", "-n", ns["grc"], "create", "secret", "generic",
+         ciso_secret_name,
          f"--from-literal=django-secret-key={django_secret}",
          "--dry-run=client", "-o", "yaml"],
         capture_output=True, text=True
@@ -820,7 +948,7 @@ def create_secrets():
         logging.error(f"Failed to generate CISO Assistant Django secret: {proc.stderr}")
         raise RuntimeError("Failed to create CISO Assistant Django secret")
     if dry_run:
-        logging.info(f"Dry‑run: would apply CISO Assistant Django secret. Manifest:\n{proc.stdout}")
+        logging.info(f"Dry‑run: would apply CISO Assistant Django secret '{ciso_secret_name}'. Manifest:\n{proc.stdout}")
     else:
         apply_proc = subprocess.run(
             ["kubectl", "apply", "-f", "-"],
@@ -829,7 +957,7 @@ def create_secrets():
         if apply_proc.returncode != 0:
             logging.error("Failed to apply CISO Assistant Django secret")
             raise RuntimeError("Failed to apply CISO Assistant Django secret")
-        logging.info("CISO Assistant Django secret created/updated in grc namespace.")
+        logging.info(f"CISO Assistant Django secret '{ciso_secret_name}' created/updated in {ns['grc']} namespace.")
 
 def _create_database(pod_name, namespace, db_name, secret_name, secret_key):
     """Create a database in the PostgreSQL instance running in the cluster.

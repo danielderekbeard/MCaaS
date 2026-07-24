@@ -1,0 +1,18 @@
+# =============================================================================
+# MCaaS Client Wazuh Values Template
+# =============================================================================
+# Wazuh is deployed via kustomize (not Helm), so this file is a reference only.
+#
+# When deploying Wazuh for a client, the deploy.py script will:
+#   1. Clone the wazuh-kubernetes repo
+#   2. Apply kustomize overlays to the client's <prefix>-wazuh namespace
+#   3. Generate TLS certificates for the client
+#
+# Key client-specific references that Wazuh needs:
+#   - Namespace: <prefix>-wazuh
+#   - OpenSearch URL: https://opensearch-cluster-master.<prefix>-security-ops.svc.cluster.local:9200
+#   - OpenSearch secret: <prefix>-opensearch-secret
+# =============================================================================
+
+# This file is intentionally left as a reference placeholder.
+# Wazuh configuration is handled via kustomize overlays, not Helm values.

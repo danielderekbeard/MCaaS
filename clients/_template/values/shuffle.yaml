@@ -1,0 +1,21 @@
+# =============================================================================
+# MCaaS Client Shuffle Values Template
+# =============================================================================
+# Replace <prefix> with the client's resource prefix (e.g., "acme")
+# Replace <prefix-security-ops> with the client's security-ops namespace
+# =============================================================================
+
+fullnameOverride: shuffle
+opensearch:
+  enabled: false
+backend:
+  openSearch:
+    url: "https://opensearch-cluster-master.<prefix>-security-ops.svc.cluster.local:9200"
+    username: admin
+    skipSSLVerify: true
+  extraEnvVarsSecret: <prefix>-opensearch-secret
+orborus:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 10Gi

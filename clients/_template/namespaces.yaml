@@ -1,0 +1,26 @@
+# =============================================================================
+# MCaaS Client Namespaces Template
+# =============================================================================
+# Replace <prefix> with the client's resource prefix (e.g., "acme")
+# All namespace names must match the namespaces defined in config.yaml
+# =============================================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: <prefix>-security-ops
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: <prefix>-managed-it
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: <prefix>-grc
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: <prefix>-wazuh

@@ -1,0 +1,49 @@
+# =============================================================================
+# MCaaS Client Configuration Template
+# =============================================================================
+# Copy this directory to clients/<client-name>/ and update all values.
+# The "name" field must match the directory name.
+#
+# Naming convention:
+#   - Client name: lowercase, hyphenated (e.g., "acme", "big-corp")
+#   - Branch:      client/<client-name> (e.g., "client/acme")
+# =============================================================================
+
+client:
+  # Required: Short identifier for this client (must match directory name)
+  name: ""
+
+  # Display name for logging and reports
+  display_name: ""
+
+  # Domain suffix for ingress hosts
+  # Example: "acme.example.com" → zammad.acme.example.com, ciso.acme.example.com
+  domain: ""
+
+  # Resource prefix applied to all Helm releases, secrets, and DB names
+  # Replaces "mcaas-" in all resource names
+  # Example: "acme" → acme-postgresql, acme-opensearch, etc.
+  prefix: ""
+
+  # Namespace mapping (base → client-specific)
+  # Each base namespace gets the client prefix prepended
+  namespaces:
+    managed-it: ""      # e.g., "acme-managed-it"
+    security-ops: ""    # e.g., "acme-security-ops"
+    grc: ""            # e.g., "acme-grc"
+    wazuh: ""           # e.g., "acme-wazuh"
+
+  # Kubernetes cluster context (optional — uses current context if not set)
+  # Set this to automatically switch to the correct cluster before deploying
+  # kube_context: ""
+
+  # Wazuh version (pinned per client for stability)
+  wazuh_version: "4.14.6"
+
+  # PostgreSQL database name
+  database_name: ""     # e.g., "acme_db"
+
+  # Ingress configuration
+  ingress:
+    zammad_host: ""     # e.g., "zammad.acme.example.com"
+    ciso_host: ""       # e.g., "ciso.acme.example.com"
