@@ -6,7 +6,7 @@ opensearch:
 
 backend:
   openSearch:
-    url: "http://opensearch-cluster-master.security-ops.svc.cluster.local:9200"
+    url: "https://opensearch-cluster-master.security-ops.svc.cluster.local:9200"
     username: admin
     skipSSLVerify: true
   extraEnvVarsSecret: mcaas-opensearch-secret
