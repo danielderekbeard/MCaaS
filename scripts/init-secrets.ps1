@@ -92,6 +92,7 @@ try {
     Log "Creating/updating PostgreSQL secret..."
     kubectl -n managed-it create secret generic mcaas-postgresql-secret `
       --from-literal=postgres-password="$env:MCAAS_POSTGRES_PASSWORD" `
+      --from-literal=password="$env:MCAAS_POSTGRES_PASSWORD" `
       --dry-run=client -o yaml | kubectl apply -f -
 
     Log "Creating/updating OpenSearch secret..."

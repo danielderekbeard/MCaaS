@@ -80,6 +80,71 @@ def check_git():
     )
 
 
+def find_openssl() -> str | None:
+    """Locate the openssl executable.
+
+    On Windows, openssl is typically not on PATH even when Git is installed.
+    Git for Windows ships OpenSSL under ``<Git>\\mingw64\\bin\\openssl.exe``
+    and ``<Git>\\usr\\bin\\openssl.exe``.  This function searches those
+    locations and returns the path when found.
+    On POSIX systems the function simply delegates to shutil.which.
+    """
+    # Try the standard PATH lookup first.
+    found = shutil.which("openssl")
+    if found:
+        return found
+
+    if IS_WINDOWS:
+        git_path = shutil.which("git")
+        if git_path:
+            git_dir = Path(git_path).parent
+            git_root = git_dir.parent  # e.g. C:\Program Files\Git
+            for candidate in [
+                git_root / "mingw64" / "bin" / "openssl.exe",
+                git_root / "usr" / "bin" / "openssl.exe",
+            ]:
+                if candidate.exists():
+                    return str(candidate)
+    return None
+
+
+def ensure_openssl_on_path() -> None:
+    """Ensure openssl is reachable on PATH.
+
+    On Windows, if openssl is not already on PATH, this function locates the
+    Git-bundled OpenSSL and adds its directory to PATH so subsequent calls
+    succeed.
+    """
+    if shutil.which("openssl"):
+        return  # Already on PATH
+
+    openssl_path = find_openssl()
+    if openssl_path:
+        openssl_dir = str(Path(openssl_path).parent)
+        import os
+        os.environ["PATH"] = openssl_dir + os.pathsep + os.environ.get("PATH", "")
+        print(f"   Added OpenSSL directory to PATH: {openssl_dir}")
+    else:
+        print("   ⚠️  OpenSSL not found anywhere. Install OpenSSL or Git for Windows.")
+
+
+def check_openssl():
+    """Check OpenSSL installation (required for Wazuh TLS cert generation).
+
+    On Windows, this also attempts to locate Git-bundled OpenSSL and add it
+    to PATH before performing the check.
+    """
+    if IS_WINDOWS:
+        ensure_openssl_on_path()
+
+    return check_tool(
+        "openssl",
+        ["openssl", "version"],
+        windows_install="choco install openssl OR install Git for Windows (includes OpenSSL)",
+        unix_install="brew install openssl (macOS) OR apt-get install openssl (Linux)"
+    )
+
+
 def check_docker_runtime():
     """Check for a Docker or Kubernetes runtime."""
     docker_available = shutil.which("docker") is not None
@@ -150,6 +215,7 @@ def main():
         ("kubectl", check_kubectl),
         ("helm", check_helm),
         ("git", check_git),
+        ("openssl", check_openssl),
         ("Kubernetes Runtime", check_docker_runtime),
     ]
     

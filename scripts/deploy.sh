@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_ROOT}/../.env" 2>/dev/null || true
+PROJECT_ROOT="${SCRIPT_ROOT}/.."
+source "${PROJECT_ROOT}/.env" 2>/dev/null || true
 
 # Logging setup: create logs directory and capture stdout/stderr to a per-run logfile
-LOG_DIR="${SCRIPT_ROOT}/../logs"
+LOG_DIR="${PROJECT_ROOT}/logs"
 mkdir -p "${LOG_DIR}"
 LOG_FILE="${LOG_DIR}/deploy-$(date -u +%Y%m%d-%H%M%SZ).log"
 # tee preserves console output while appending to logfile
@@ -22,46 +23,169 @@ wait_for_deployment() {
     log "Deployment '$deployment_name' is ready."
 }
 
+# Helper: generate a random password
+generate_password() {
+    openssl rand -base64 24 | tr -d '=/+' | head -c 24
+}
+
+# Create required Kubernetes secrets (must happen BEFORE Helm installs)
+create_secrets() {
+    local env_file="${PROJECT_ROOT}/.env"
+    local postgres_pw="${MCAAS_POSTGRES_PASSWORD:-}"
+    local opensearch_pw="${MCAAS_OPENSEARCH_PASSWORD:-}"
+
+    # Generate passwords if not set
+    if [[ -z "$postgres_pw" || -z "$opensearch_pw" ]]; then
+        if [[ ! -f "$env_file" ]]; then
+            log "No .env file found. Generating passwords and creating .env file..."
+            postgres_pw="${postgres_pw:-$(generate_password)}"
+            opensearch_pw="${opensearch_pw:-$(generate_password)}"
+            printf "MCAAS_POSTGRES_PASSWORD=%s\nMCAAS_OPENSEARCH_PASSWORD=%s\n" "$postgres_pw" "$opensearch_pw" > "$env_file"
+            log "Created ${env_file} with generated passwords. Back this file up for redeployments."
+        else
+            if [[ -z "$postgres_pw" ]]; then
+                log "ERROR: MCAAS_POSTGRES_PASSWORD is not set. Set it in your .env file or environment."
+                exit 1
+            fi
+            if [[ -z "$opensearch_pw" ]]; then
+                log "ERROR: MCAAS_OPENSEARCH_PASSWORD is not set. Set it in your .env file or environment."
+                exit 1
+            fi
+        fi
+    fi
+
+    log "Creating/updating Kubernetes secrets..."
+    kubectl -n managed-it create secret generic mcaas-postgresql-secret \
+        --from-literal=postgres-password="${postgres_pw}" \
+        --from-literal=password="${postgres_pw}" \
+        --dry-run=client -o yaml | kubectl apply -f -
+    log "PostgreSQL secret created/updated in managed-it namespace."
+
+    kubectl -n security-ops create secret generic mcaas-opensearch-secret \
+        --from-literal=opensearch-password="${opensearch_pw}" \
+        --dry-run=client -o yaml | kubectl apply -f -
+    log "OpenSearch secret created/updated in security-ops namespace."
+}
+
+# Generate self-signed TLS certificates for Wazuh
+ensure_wazuh_certs() {
+    local wazuh_dir="$1"
+    local certs_dir
+    certs_dir="${wazuh_dir}/config"
+
+    # Check if root CA already exists
+    if [[ -f "${certs_dir}/root-ca/certs/root-ca.pem" ]]; then
+        log "Wazuh TLS certificates already exist, skipping generation."
+        return 0
+    fi
+
+    log "Generating self-signed TLS certificates for Wazuh..."
+
+    # Create directories
+    mkdir -p "${certs_dir}/root-ca/certs"
+    mkdir -p "${certs_dir}/indexer/certs"
+    mkdir -p "${certs_dir}/dashboard/certs"
+    mkdir -p "${certs_dir}/manager/certs"
+
+    # Generate root CA
+    openssl genrsa -out "${certs_dir}/root-ca/certs/root-ca-key.pem" 4096
+    openssl req -new -x509 -key "${certs_dir}/root-ca/certs/root-ca-key.pem" \
+        -out "${certs_dir}/root-ca/certs/root-ca.pem" \
+        -days 3650 -subj "/O=MCaaS/CN=Wazuh-Root-CA"
+
+    # Generate indexer certificate
+    openssl genrsa -out "${certs_dir}/indexer/certs/indexer-key.pem" 2048
+    openssl req -new -key "${certs_dir}/indexer/certs/indexer-key.pem" \
+        -out "${certs_dir}/indexer/certs/indexer.csr" \
+        -subj "/O=MCaaS/CN=wazuh-indexer"
+    openssl x509 -req -in "${certs_dir}/indexer/certs/indexer.csr" \
+        -CA "${certs_dir}/root-ca/certs/root-ca.pem" \
+        -CAkey "${certs_dir}/root-ca/certs/root-ca-key.pem" \
+        -CAcreateserial -out "${certs_dir}/indexer/certs/indexer.pem" -days 3650
+    cp "${certs_dir}/root-ca/certs/root-ca.pem" "${certs_dir}/indexer/certs/root-ca.pem"
+
+    # Generate dashboard certificate
+    openssl genrsa -out "${certs_dir}/dashboard/certs/dashboard-key.pem" 2048
+    openssl req -new -key "${certs_dir}/dashboard/certs/dashboard-key.pem" \
+        -out "${certs_dir}/dashboard/certs/dashboard.csr" \
+        -subj "/O=MCaaS/CN=wazuh-dashboard"
+    openssl x509 -req -in "${certs_dir}/dashboard/certs/dashboard.csr" \
+        -CA "${certs_dir}/root-ca/certs/root-ca.pem" \
+        -CAkey "${certs_dir}/root-ca/certs/root-ca-key.pem" \
+        -CAcreateserial -out "${certs_dir}/dashboard/certs/dashboard.pem" -days 3650
+    cp "${certs_dir}/root-ca/certs/root-ca.pem" "${certs_dir}/dashboard/certs/root-ca.pem"
+
+    # Generate manager certificate
+    openssl genrsa -out "${certs_dir}/manager/certs/manager-key.pem" 2048
+    openssl req -new -key "${certs_dir}/manager/certs/manager-key.pem" \
+        -out "${certs_dir}/manager/certs/manager.csr" \
+        -subj "/O=MCaaS/CN=wazuh-manager"
+    openssl x509 -req -in "${certs_dir}/manager/certs/manager.csr" \
+        -CA "${certs_dir}/root-ca/certs/root-ca.pem" \
+        -CAkey "${certs_dir}/root-ca/certs/root-ca-key.pem" \
+        -CAcreateserial -out "${certs_dir}/manager/certs/manager.pem" -days 3650
+    cp "${certs_dir}/root-ca/certs/root-ca.pem" "${certs_dir}/manager/certs/root-ca.pem"
+
+    log "Wazuh TLS certificates generated successfully."
+}
+
 log "Adding and updating Helm repositories..."
 helm repo add bitnami https://charts.bitnami.com/bitnami
-helm repo add opensearch https://opensearch-project.github.io/helm-charts # Wazuh uses this for its indexer
+helm repo add opensearch https://opensearch-project.github.io/helm-charts
 helm repo add zammad https://zammad.github.io/zammad-helm
 helm repo update
 
-kubectl apply -k "${SCRIPT_ROOT}/../deploy"
+log "Creating required Kubernetes secrets..."
+create_secrets
 
+log "Applying namespaces and base manifests..."
+kubectl apply -k "${PROJECT_ROOT}/deploy"
+
+log "Deploying PostgreSQL..."
 helm upgrade --install mcaas-postgresql bitnami/postgresql \
   --namespace managed-it \
-  --values "${SCRIPT_ROOT}/../deploy/values/postgresql.yaml" \
+  --values "${PROJECT_ROOT}/deploy/values/postgresql.yaml" \
   --wait --timeout 5m
+wait_for_deployment "managed-it" "mcaas-postgresql"
 
+log "Deploying OpenSearch..."
 helm upgrade --install mcaas-opensearch opensearch/opensearch \
   --namespace security-ops \
-  --values "${SCRIPT_ROOT}/../deploy/values/opensearch.yaml" \
+  --values "${PROJECT_ROOT}/deploy/values/opensearch.yaml" \
   --wait --timeout 5m
+wait_for_deployment "security-ops" "mcaas-opensearch"
 
-log "Cloning Wazuh repository..."
-[[ -d /tmp/wazuh-kubernetes ]] || git clone --depth 1 https://github.com/wazuh/wazuh-kubernetes.git /tmp/wazuh-kubernetes
+# Clone or use Wazuh repo
+WAZUH_DIR="${PROJECT_ROOT}/.tmp/wazuh-kubernetes"
+if [[ -d "${WAZUH_DIR}" ]]; then
+    log "Using existing Wazuh repository at ${WAZUH_DIR}"
+else
+    log "Cloning Wazuh repository..."
+    git clone --depth 1 --branch v4.14.6 https://github.com/wazuh/wazuh-kubernetes.git "${WAZUH_DIR}"
+fi
+
+# Generate TLS certificates for Wazuh
+ensure_wazuh_certs "${WAZUH_DIR}"
 
 log "Deploying Wazuh from manifests..."
-kubectl apply -k /tmp/wazuh-kubernetes/envs/local-env
+kubectl apply -k "${WAZUH_DIR}/envs/local-env"
 
 log "Waiting for Wazuh components to be ready..."
-kubectl wait --for=condition=ready pod -l app=wazuh-manager -n security-ops --timeout=5m
-kubectl wait --for=condition=ready pod -l app=wazuh-indexer -n security-ops --timeout=5m
-kubectl wait --for=condition=ready pod -l app=wazuh-dashboard -n security-ops --timeout=5m
+kubectl wait --for=condition=ready pod -l app=wazuh-manager -n wazuh --timeout=5m || true
+kubectl wait --for=condition=ready pod -l app=wazuh-indexer -n wazuh --timeout=5m || true
+kubectl wait --for=condition=ready pod -l app=wazuh-dashboard -n wazuh --timeout=5m || true
 
 log "Deploying Shuffle..."
 helm upgrade --install mcaas-shuffle oci://ghcr.io/shuffle/charts/shuffle \
   --namespace security-ops \
-  --values "${SCRIPT_ROOT}/../deploy/values/shuffle.yaml" \
+  --values "${PROJECT_ROOT}/deploy/values/shuffle.yaml" \
   --wait --timeout 5m
 wait_for_deployment "security-ops" "mcaas-shuffle"
 
 log "Deploying Zammad..."
 helm upgrade --install zammad zammad/zammad \
   --namespace managed-it \
-  --values "${SCRIPT_ROOT}/../deploy/values/zammad.yaml" \
+  --values "${PROJECT_ROOT}/deploy/values/zammad.yaml" \
   --wait --timeout 5m
 wait_for_deployment "managed-it" "zammad-zammad-scheduler"
 wait_for_deployment "managed-it" "zammad-zammad-websocket"
@@ -71,7 +195,7 @@ log "Deploying CISO Assistant..."
 helm upgrade --install ciso-assistant oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant \
   --version 0.11.4 \
   --namespace grc \
-  --values "${SCRIPT_ROOT}/../deploy/values/ciso-assistant.yaml" \
+  --values "${PROJECT_ROOT}/deploy/values/ciso-assistant.yaml" \
   --wait --timeout 5m
 wait_for_deployment "grc" "ciso-assistant-frontend"
 wait_for_deployment "grc" "ciso-assistant-backend"

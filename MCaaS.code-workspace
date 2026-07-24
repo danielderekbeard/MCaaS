@@ -4,5 +4,50 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"files.exclude": {
+			"**/.git": true,
+			"**/.svn": true,
+			"**/.hg": true,
+			"**/CVS": true,
+			"**/.DS_Store": true,
+			"**/Thumbs.db": true,
+			"**/__pycache__": true,
+			"**/*.pyc": true,
+			"**/logs": true,
+			"**/.tmp": true
+		},
+		"search.exclude": {
+			"**/node_modules": true,
+			"**/bower_components": true,
+			"**/*.code-search": true,
+			"**/logs": true,
+			"**/__pycache__": true,
+			"**/.tmp": true
+		},
+		"yaml.schemas": {
+			"kubernetes": [
+				"*.yaml",
+				"*.yml"
+			]
+		},
+		"[yaml]": {
+			"editor.defaultFormatter": "redhat.vscode-yaml"
+		},
+		"[python]": {
+			"editor.defaultFormatter": "ms-python.black-formatter",
+			"editor.formatOnSave": true
+		}
+	},
+	"extensions": {
+		"recommendations": [
+			"ms-python.python",
+			"ms-python.black-formatter",
+			"redhat.vscode-yaml",
+			"ms-azuretools.vscode-docker",
+			"ms-vscode.powershell",
+			"timonwong.shellcheck",
+			"bungcip.better-toml"
+		]
+	}
 }

@@ -11,5 +11,12 @@ externalPgsql:
   database: "ciso-assistant"
 ingress:
   enabled: true
+  # IMPORTANT: Replace ciso.mcaas.example.com with your actual domain.
+  # If you don't have a domain, set ingress.enabled=false and use port-forward instead.
+  hosts:
+    - host: ciso.mcaas.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
   annotations:
     nginx.ingress.kubernetes.io/ssl-passthrough: "true"

@@ -13,7 +13,6 @@ trap 'log "Script exited with status $?"' EXIT
 declare -A releases=(
     ["ciso-assistant"]="grc"
     ["zammad"]="managed-it"
-    ["mcaas-wazuh"]="security-ops"
     ["mcaas-shuffle"]="security-ops"
     ["mcaas-opensearch"]="security-ops"
     ["mcaas-postgresql"]="managed-it"
@@ -45,6 +44,10 @@ rm -rf "${TMP_DIR}/wazuh-kubernetes" "${TMP_DIR}/shuffle"
 log "Deleting persistent volume claims..."
 kubectl delete pvc -n security-ops -l app.kubernetes.io/instance=mcaas-opensearch --ignore-not-found=true
 kubectl delete pvc -n managed-it -l app.kubernetes.io/instance=mcaas-postgresql --ignore-not-found=true
+
+log "Deleting Kubernetes secrets..."
+kubectl delete secret mcaas-postgresql-secret --namespace managed-it --ignore-not-found=true 2>/dev/null || true
+kubectl delete secret mcaas-opensearch-secret --namespace security-ops --ignore-not-found=true 2>/dev/null || true
 
 kubectl delete -k "${SCRIPT_ROOT}/../deploy" --ignore-not-found=true
 

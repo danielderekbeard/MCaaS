@@ -92,6 +92,15 @@ function Test-Prerequisites {
         Log-Message "✅ git: Found"
     }
     
+    # Check openssl (required for Wazuh TLS cert generation)
+    $openssl = Get-Command openssl -ErrorAction SilentlyContinue
+    if (-not $openssl) {
+        $missingTools += "openssl"
+    }
+    else {
+        Log-Message "✅ openssl: Found"
+    }
+    
     if ($missingTools.Count -gt 0) {
         Handle-Error "Missing required tools: $($missingTools -join ', ')"
     }

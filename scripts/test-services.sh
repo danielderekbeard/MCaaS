@@ -13,7 +13,7 @@ trap 'log "Script exited with status $?"' EXIT
 log "Starting service health checks..."
 
 declare -A services=(
-    ["Wazuh Dashboard"]="security-ops:wazuh-dashboard:443:8443:https"
+    ["Wazuh Dashboard"]="wazuh:wazuh-dashboard:443:8443:https"
     ["Shuffle UI"]="security-ops:mcaas-shuffle:5001:8081:http"
     ["Zammad Web"]="managed-it:zammad-zammad-web:80:8082:http"
     ["CISO Assistant Frontend"]="grc:ciso-assistant-frontend:80:8083:http"

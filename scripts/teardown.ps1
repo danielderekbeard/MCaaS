@@ -53,27 +53,26 @@ try {
     Log "Starting MCaaS teardown..."
 
     # --- Uninstall Helm Releases ---
-    $releases = @{
-        "ciso-assistant"   = "grc"
-        "zammad"           = "managed-it"
-        "mcaas-wazuh"      = "security-ops"
-        "mcaas-shuffle"    = "security-ops"
-        "mcaas-opensearch" = "security-ops"
-        "mcaas-postgresql" = "managed-it"
-    }
+    $releases = @(
+        @{ Name = "ciso-assistant";   Namespace = "grc" },
+        @{ Name = "zammad";           Namespace = "managed-it" },
+        @{ Name = "mcaas-shuffle";    Namespace = "security-ops" },
+        @{ Name = "mcaas-opensearch"; Namespace = "security-ops" },
+        @{ Name = "mcaas-postgresql"; Namespace = "managed-it" }
+    )
 
-    foreach ($release in $releases.GetEnumerator()) {
+    foreach ($release in $releases) {
         $exists = $false
         try {
-            helm status $release.Name --namespace $release.Value --output json | Out-Null
+            helm status $release.Name --namespace $release.Namespace --output json | Out-Null
             $exists = $true
         } catch {
             $exists = $false
         }
 
         if ($exists) {
-            Log "Uninstalling Helm release '$($release.Name)' from namespace '$($release.Value)'..."
-            helm uninstall $release.Name --namespace $release.Value
+            Log "Uninstalling Helm release '$($release.Name)' from namespace '$($release.Namespace)'..."
+            helm uninstall $release.Name --namespace $release.Namespace
         } else {
             Log "Helm release '$($release.Name)' not found, skipping."
         }
@@ -102,9 +101,22 @@ try {
     kubectl delete pvc -n security-ops -l app.kubernetes.io/instance=mcaas-opensearch --ignore-not-found=$true --insecure-skip-tls-verify=true 2>$null
     kubectl delete pvc -n managed-it -l app.kubernetes.io/instance=mcaas-postgresql --ignore-not-found=$true --insecure-skip-tls-verify=true 2>$null
 
+    # --- Delete Kubernetes Secrets ---
+    Log "Deleting Kubernetes secrets..."
+    kubectl delete secret mcaas-postgresql-secret --namespace managed-it --ignore-not-found=$true 2>$null
+    kubectl delete secret mcaas-opensearch-secret --namespace security-ops --ignore-not-found=$true 2>$null
+
     # --- Delete Namespaces and other base resources ---
     Log "Deleting resources from kustomization (including namespaces)..."
     kubectl delete -k (Join-Path $scriptRoot '..\deploy') --ignore-not-found=$true --insecure-skip-tls-verify=true 2>$null
+
+    # --- Cleanup Temporary Files ---
+    Log "Cleaning up temporary files..."
+    $tmpDir = Join-Path (Split-Path -Parent $scriptRoot) '.tmp'
+    if (Test-Path $tmpDir) {
+        Remove-Item -Path $tmpDir -Recurse -Force
+        Log "Removed .tmp directory"
+    }
 
     Log "Teardown complete."
 } finally {

@@ -1,5 +1,21 @@
 # fleet.yaml - Rancher GitOps Manifest
 # This file instructs Rancher's Fleet to deploy the MCaaS stack from this repository.
+#
+# Prerequisites:
+#   1. Secrets must be created BEFORE applying this Fleet config:
+#      - mcaas-postgresql-secret in managed-it namespace (keys: postgres-password, password)
+#      - mcaas-opensearch-secret in security-ops namespace (key: opensearch-password)
+#      Use scripts/init-secrets.sh or scripts/init-secrets.ps1, or deploy.py does this automatically.
+#
+#   2. OCI charts (CISO Assistant, Shuffle) require container registry credentials:
+#      kubectl create secret docker-registry ghcr-creds \
+#        --docker-server=ghcr.io \
+#        --docker-username=<username> \
+#        --docker-password=<pat> \
+#        -n fleet-default
+#
+#   3. Wazuh is deployed via kustomize (not Helm) and cannot be managed by Fleet.
+#      Use deploy.py or deploy.sh to deploy Wazuh separately.
 
 defaultNamespace: default
 
@@ -17,9 +33,6 @@ targetCustomizations:
       repo: https://opensearch-project.github.io/helm-charts
     - name: zammad
       repo: https://zammad.github.io/zammad-helm
-    # Note: Wazuh and Shuffle are now deployed via local charts/manifests cloned from Git.
-    # They cannot be managed as Helm releases in this Fleet configuration and must be deployed
-    # via the scripts/deploy.sh or a CI/CD pipeline that can clone the repositories.
 
   # Define the Helm releases to be deployed
   releases:
@@ -33,16 +46,23 @@ targetCustomizations:
     namespace: security-ops
     valuesFiles:
     - deploy/values/opensearch.yaml
+  - name: mcaas-shuffle
+    chart: oci://ghcr.io/shuffle/charts/shuffle
+    namespace: security-ops
+    valuesFiles:
+    - deploy/values/shuffle.yaml
+    dependsOn:
+    - name: mcaas-opensearch
   - name: zammad
     chart: zammad/zammad
     namespace: managed-it
     valuesFiles:
     - deploy/values/zammad.yaml
-    dependsOn: # Ensure PostgreSQL is ready before deploying Zammad
+    dependsOn:
     - name: mcaas-postgresql
   - name: ciso-assistant
     chart: oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant
-    version: 0.11.4 # Pinning version for OCI chart
+    version: 0.11.4
     namespace: grc
     valuesFiles:
     - deploy/values/ciso-assistant.yaml

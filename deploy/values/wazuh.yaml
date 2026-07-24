@@ -1,3 +1,19 @@
+# NOTE: This file is NOT applied by the deployment script. Wazuh is deployed
+# via kustomize (from the upstream wazuh-kubernetes repository), not via Helm.
+# The values below represent the *desired* configuration but cannot be passed to
+# kustomize directly. To customise the Wazuh deployment, create a kustomize
+# overlay in deploy/wazuh-overlay/ or patch the upstream manifests.
+#
+# Desired configuration (for reference when creating kustomize patches):
+#   - Wazuh indexer is disabled; external OpenSearch is used instead
+#   - External OpenSearch host: mcaas-opensearch.security-ops.svc.cluster.local:9200
+#   - External OpenSearch secret: mcaas-opensearch-secret (key: opensearch-password)
+#   - Wazuh manager and dashboard remain enabled
+#
+# Currently the deployment uses the upstream local-env overlay as-is, which
+# deploys the Wazuh indexer alongside the manager and dashboard in the "wazuh"
+# namespace. See deploy_wazuh() in deploy.py for details.
+
 wazuh:
   manager:
     enabled: true

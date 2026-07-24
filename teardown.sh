@@ -17,7 +17,6 @@ log "Starting MCaaS teardown..."
 declare -A releases=(
     ["ciso-assistant"]="grc"
     ["zammad"]="managed-it"
-    ["mcaas-wazuh"]="security-ops"
     ["mcaas-shuffle"]="security-ops"
     ["mcaas-opensearch"]="security-ops"
     ["mcaas-postgresql"]="managed-it"
@@ -48,11 +47,16 @@ log "Deleting persistent volume claims..."
 kubectl delete pvc -n security-ops -l app.kubernetes.io/instance=mcaas-opensearch --ignore-not-found=true
 kubectl delete pvc -n managed-it -l app.kubernetes.io/instance=mcaas-postgresql --ignore-not-found=true
 
+# --- Delete Kubernetes Secrets ---
+log "Deleting Kubernetes secrets..."
+kubectl delete secret mcaas-postgresql-secret --namespace managed-it --ignore-not-found=true 2>/dev/null || true
+kubectl delete secret mcaas-opensearch-secret --namespace security-ops --ignore-not-found=true 2>/dev/null || true
+
 # --- Delete Namespaces and other base resources ---
 log "Deleting resources from kustomization (including namespaces)..."
 kubectl delete -k "${SCRIPT_ROOT}/../deploy" --ignore-not-found=true
 
 log "Cleaning up cloned repositories..."
-rm -rf /tmp/wazuh-kubernetes /tmp/shuffle
+rm -rf "${TMP_DIR}/wazuh-kubernetes" "${TMP_DIR}/shuffle"
 
 log "Teardown complete. Logs written to ${LOG_FILE}"

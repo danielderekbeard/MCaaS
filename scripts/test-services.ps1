@@ -53,7 +53,7 @@ try {
     Log "Starting service health checks..."
 
     $services = @(
-        @{ Name = "Wazuh Dashboard";         Namespace = "security-ops"; ServiceName = "wazuh-dashboard";         ServicePort = 443; LocalPort = 8443; Protocol = "https" },
+        @{ Name = "Wazuh Dashboard";         Namespace = "wazuh"; ServiceName = "wazuh-dashboard";         ServicePort = 443; LocalPort = 8443; Protocol = "https" },
         @{ Name = "Shuffle UI";              Namespace = "security-ops"; ServiceName = "mcaas-shuffle";             ServicePort = 5001; LocalPort = 8081; Protocol = "http" },
         @{ Name = "Zammad Web";              Namespace = "managed-it";   ServiceName = "zammad-zammad-web";         ServicePort = 80;   LocalPort = 8082; Protocol = "http" },
         @{ Name = "CISO Assistant Frontend"; Namespace = "grc";          ServiceName = "ciso-assistant-frontend"; ServicePort = 80;   LocalPort = 8083; Protocol = "http" }
