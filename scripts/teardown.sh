@@ -11,8 +11,8 @@ log() { printf "[%s] %s\n" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 trap 'log "Script exited with status $?"' EXIT
 
 declare -A releases=(
-    ["ciso-assistant"]="grc"
-    ["zammad"]="managed-it"
+    ["mcaas-ciso"]="grc"
+    ["mcaas-zammad"]="managed-it"
     ["mcaas-shuffle"]="security-ops"
     ["mcaas-opensearch"]="security-ops"
     ["mcaas-postgresql"]="managed-it"
@@ -36,18 +36,26 @@ if [ -d "$WAZUH_ENV" ]; then
 fi
 kubectl delete namespace wazuh --ignore-not-found=true
 
-log "Cleaning up cloned repositories..."
-mkdir -p "${TMP_DIR}"
-log "Cleaning up cloned repositories in ${TMP_DIR}..."
-rm -rf "${TMP_DIR}/wazuh-kubernetes" "${TMP_DIR}/shuffle"
-
 log "Deleting persistent volume claims..."
 kubectl delete pvc -n security-ops -l app.kubernetes.io/instance=mcaas-opensearch --ignore-not-found=true
 kubectl delete pvc -n managed-it -l app.kubernetes.io/instance=mcaas-postgresql --ignore-not-found=true
+kubectl delete pvc -n managed-it -l app.kubernetes.io/instance=mcaas-zammad --ignore-not-found=true
+kubectl delete pvc -n security-ops -l app.kubernetes.io/instance=mcaas-shuffle --ignore-not-found=true
+# Wazuh PVCs use different labels
+kubectl delete pvc -n wazuh -l app=wazuh-indexer --ignore-not-found=true
+kubectl delete pvc -n wazuh -l app=wazuh-manager --ignore-not-found=true
 
 log "Deleting Kubernetes secrets..."
 kubectl delete secret mcaas-postgresql-secret --namespace managed-it --ignore-not-found=true 2>/dev/null || true
 kubectl delete secret mcaas-opensearch-secret --namespace security-ops --ignore-not-found=true 2>/dev/null || true
+kubectl delete secret mcaas-postgresql-secret --namespace grc --ignore-not-found=true 2>/dev/null || true
+kubectl delete secret mcaas-zammad-redis-pass --namespace managed-it --ignore-not-found=true 2>/dev/null || true
+kubectl delete secret mcaas-ciso-secret --namespace grc --ignore-not-found=true 2>/dev/null || true
+
+log "Cleaning up cloned repositories and .env file..."
+mkdir -p "${TMP_DIR}"
+rm -rf "${TMP_DIR}/wazuh-kubernetes" "${TMP_DIR}/shuffle"
+rm -f "$(cd "${SCRIPT_ROOT}/.." && pwd)/.env"
 
 kubectl delete -k "${SCRIPT_ROOT}/../deploy" --ignore-not-found=true
 

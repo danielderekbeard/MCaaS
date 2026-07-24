@@ -128,18 +128,18 @@ def load_client_config(client_name):
         "values_dir": client_dir / "values",
     }
 
+
 # --- Logging Setup ---
 LOG_DIR.mkdir(exist_ok=True)
-log_file = LOG_DIR / f"teardown-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%SZ')}.log"
+log_file = (
+    LOG_DIR / f"teardown-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%SZ')}.log"
+)
 
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(message)s",
     datefmt="%Y-%m-%dT%H:%M:%SZ",
-    handlers=[
-        logging.FileHandler(log_file),
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stdout)],
 )
 
 
@@ -157,12 +157,7 @@ def run_command(command, check=True, shell=False, cwd=None):
 
     try:
         result = subprocess.run(
-            command,
-            check=check,
-            text=True,
-            capture_output=True,
-            shell=shell,
-            cwd=cwd
+            command, check=check, text=True, capture_output=True, shell=shell, cwd=cwd
         )
         if result.stdout:
             logging.debug(f"STDOUT:\n{result.stdout}")
@@ -186,8 +181,7 @@ def run_command(command, check=True, shell=False, cwd=None):
 def helm_release_exists(release_name, namespace):
     """Check if a Helm release exists in the given namespace."""
     result = run_command(
-        ["helm", "status", release_name, "--namespace", namespace],
-        check=False
+        ["helm", "status", release_name, "--namespace", namespace], check=False
     )
     return result.returncode == 0
 
@@ -206,12 +200,16 @@ def uninstall_helm_releases(cfg):
     ]
 
     for release_name, namespace in releases:
-        logging.info(f"Uninstalling Helm release '{release_name}' from namespace '{namespace}'...")
+        logging.info(
+            f"Uninstalling Helm release '{release_name}' from namespace '{namespace}'..."
+        )
         if helm_release_exists(release_name, namespace):
             run_command(["helm", "uninstall", release_name, "--namespace", namespace])
             logging.info(f"Helm release '{release_name}' uninstalled.")
         else:
-            logging.info(f"Helm release '{release_name}' not found in namespace '{namespace}', skipping.")
+            logging.info(
+                f"Helm release '{release_name}' not found in namespace '{namespace}', skipping."
+            )
 
 
 def delete_wazuh_resources(cfg):
@@ -224,7 +222,7 @@ def delete_wazuh_resources(cfg):
         logging.info(f"Deleting Wazuh kustomize resources from {wazuh_env_dir}...")
         run_command(
             ["kubectl", "delete", "-k", str(wazuh_env_dir), "--ignore-not-found=true"],
-            check=False
+            check=False,
         )
     else:
         logging.warning(
@@ -236,7 +234,7 @@ def delete_wazuh_resources(cfg):
     logging.info("Deleting Wazuh namespace...")
     run_command(
         ["kubectl", "delete", "namespace", wazuh_ns, "--ignore-not-found=true"],
-        check=False
+        check=False,
     )
 
 
@@ -249,14 +247,22 @@ def delete_secrets(cfg):
         (f"{prefix}-postgresql-secret", ns["grc"]),
         (f"{prefix}-opensearch-secret", ns["security-ops"]),
         (f"{prefix}-zammad-redis-pass", ns["managed-it"]),
-        (f"{prefix}-ciso-ciso-assistant-backend", ns["grc"]),
+        (f"{prefix}-ciso-secret", ns["grc"]),
     ]
 
     for secret_name, namespace in secrets:
         logging.info(f"Deleting secret '{secret_name}' from namespace '{namespace}'...")
         run_command(
-            ["kubectl", "delete", "secret", secret_name, "--namespace", namespace, "--ignore-not-found=true"],
-            check=False
+            [
+                "kubectl",
+                "delete",
+                "secret",
+                secret_name,
+                "--namespace",
+                namespace,
+                "--ignore-not-found=true",
+            ],
+            check=False,
         )
 
 
@@ -271,11 +277,46 @@ def delete_pvcs(cfg):
         (ns["security-ops"], f"app.kubernetes.io/instance={prefix}-shuffle"),
     ]
 
+    # Wazuh PVCs use different labels (app=wazuh-indexer / app=wazuh-manager)
+    wazuh_pvc_labels = [
+        (ns["wazuh"], "app=wazuh-indexer"),
+        (ns["wazuh"], "app=wazuh-manager"),
+    ]
+
     for namespace, label in pvc_labels:
-        logging.info(f"Deleting PVCs in namespace '{namespace}' with label '{label}'...")
+        logging.info(
+            f"Deleting PVCs in namespace '{namespace}' with label '{label}'..."
+        )
         run_command(
-            ["kubectl", "delete", "pvc", "-n", namespace, "-l", label, "--ignore-not-found=true"],
-            check=False
+            [
+                "kubectl",
+                "delete",
+                "pvc",
+                "-n",
+                namespace,
+                "-l",
+                label,
+                "--ignore-not-found=true",
+            ],
+            check=False,
+        )
+
+    for namespace, label in wazuh_pvc_labels:
+        logging.info(
+            f"Deleting Wazuh PVCs in namespace '{namespace}' with label '{label}'..."
+        )
+        run_command(
+            [
+                "kubectl",
+                "delete",
+                "pvc",
+                "-n",
+                namespace,
+                "-l",
+                label,
+                "--ignore-not-found=true",
+            ],
+            check=False,
         )
 
 
@@ -287,21 +328,33 @@ def delete_base_manifests(cfg):
         namespaces_file = cfg["client_dir"] / "namespaces.yaml"
         if namespaces_file.exists():
             run_command(
-                ["kubectl", "delete", "-f", str(namespaces_file), "--ignore-not-found=true"],
-                check=False
+                [
+                    "kubectl",
+                    "delete",
+                    "-f",
+                    str(namespaces_file),
+                    "--ignore-not-found=true",
+                ],
+                check=False,
             )
         else:
             logging.warning(f"Client namespaces file not found: {namespaces_file}")
     else:
         # Default: use the deploy/ kustomize directory
         run_command(
-            ["kubectl", "delete", "-k", str(PROJECT_ROOT / "deploy"), "--ignore-not-found=true"],
-            check=False
+            [
+                "kubectl",
+                "delete",
+                "-k",
+                str(PROJECT_ROOT / "deploy"),
+                "--ignore-not-found=true",
+            ],
+            check=False,
         )
 
 
 def cleanup_tmp():
-    """Remove cloned repositories from .tmp directory."""
+    """Remove cloned repositories from .tmp directory and .env file."""
     logging.info("Cleaning up cloned repositories...")
     wazuh_dir = TMP_DIR / "wazuh-kubernetes"
     if wazuh_dir.exists():
@@ -310,6 +363,13 @@ def cleanup_tmp():
     else:
         logging.info("No Wazuh clone directory found, nothing to clean up.")
 
+    env_file = PROJECT_ROOT / ".env"
+    if env_file.exists():
+        env_file.unlink()
+        logging.info(f"Removed {env_file}")
+    else:
+        logging.info("No .env file found, nothing to clean up.")
+
 
 def main():
     """Main teardown logic."""
@@ -317,19 +377,22 @@ def main():
     parser.add_argument(
         "--client",
         help="Client name to tear down (loads clients/<name>/config.yaml). "
-             "If omitted, uses default mcaas configuration."
+        "If omitted, uses default mcaas configuration.",
     )
     parser.add_argument(
-        "--skip-namespaces", action="store_true",
-        help="Skip deletion of namespaces (useful if other workloads share them)"
+        "--skip-namespaces",
+        action="store_true",
+        help="Skip deletion of namespaces (useful if other workloads share them)",
     )
     parser.add_argument(
-        "--skip-pvcs", action="store_true",
-        help="Skip deletion of persistent volume claims (preserve data)"
+        "--skip-pvcs",
+        action="store_true",
+        help="Skip deletion of persistent volume claims (preserve data)",
     )
     parser.add_argument(
-        "--skip-cleanup", action="store_true",
-        help="Skip cleanup of cloned repositories in .tmp directory"
+        "--skip-cleanup",
+        action="store_true",
+        help="Skip cleanup of cloned repositories in .tmp directory",
     )
     args = parser.parse_args()
 
@@ -339,7 +402,9 @@ def main():
     ns = cfg["namespaces"]
 
     try:
-        logging.info(f"Starting MCaaS teardown on {PLATFORM} (client={cfg['client_name'] or 'default'}, prefix={prefix})")
+        logging.info(
+            f"Starting MCaaS teardown on {PLATFORM} (client={cfg['client_name'] or 'default'}, prefix={prefix})"
+        )
 
         # 1. Uninstall Helm releases (reverse deployment order)
         logging.info("=== Uninstalling Helm releases ===")

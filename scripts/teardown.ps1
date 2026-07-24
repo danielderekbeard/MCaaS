@@ -54,11 +54,11 @@ try {
 
     # --- Uninstall Helm Releases ---
     $releases = @(
-        @{ Name = "ciso-assistant";   Namespace = "grc" },
-        @{ Name = "zammad";           Namespace = "managed-it" },
-        @{ Name = "mcaas-shuffle";    Namespace = "security-ops" },
-        @{ Name = "mcaas-opensearch"; Namespace = "security-ops" },
-        @{ Name = "mcaas-postgresql"; Namespace = "managed-it" }
+        @{ Name = "mcaas-ciso";        Namespace = "grc" },
+        @{ Name = "mcaas-zammad";       Namespace = "managed-it" },
+        @{ Name = "mcaas-shuffle";      Namespace = "security-ops" },
+        @{ Name = "mcaas-opensearch";   Namespace = "security-ops" },
+        @{ Name = "mcaas-postgresql";   Namespace = "managed-it" }
     )
 
     foreach ($release in $releases) {
@@ -100,11 +100,19 @@ try {
     Log "Deleting persistent volume claims..."
     kubectl delete pvc -n security-ops -l app.kubernetes.io/instance=mcaas-opensearch --ignore-not-found=$true --insecure-skip-tls-verify=true 2>$null
     kubectl delete pvc -n managed-it -l app.kubernetes.io/instance=mcaas-postgresql --ignore-not-found=$true --insecure-skip-tls-verify=true 2>$null
+    kubectl delete pvc -n managed-it -l app.kubernetes.io/instance=mcaas-zammad --ignore-not-found=$true --insecure-skip-tls-verify=true 2>$null
+    kubectl delete pvc -n security-ops -l app.kubernetes.io/instance=mcaas-shuffle --ignore-not-found=$true --insecure-skip-tls-verify=true 2>$null
+    # Wazuh PVCs use different labels
+    kubectl delete pvc -n wazuh -l app=wazuh-indexer --ignore-not-found=$true --insecure-skip-tls-verify=true 2>$null
+    kubectl delete pvc -n wazuh -l app=wazuh-manager --ignore-not-found=$true --insecure-skip-tls-verify=true 2>$null
 
     # --- Delete Kubernetes Secrets ---
     Log "Deleting Kubernetes secrets..."
     kubectl delete secret mcaas-postgresql-secret --namespace managed-it --ignore-not-found=$true 2>$null
     kubectl delete secret mcaas-opensearch-secret --namespace security-ops --ignore-not-found=$true 2>$null
+    kubectl delete secret mcaas-postgresql-secret --namespace grc --ignore-not-found=$true 2>$null
+    kubectl delete secret mcaas-zammad-redis-pass --namespace managed-it --ignore-not-found=$true 2>$null
+    kubectl delete secret mcaas-ciso-secret --namespace grc --ignore-not-found=$true 2>$null
 
     # --- Delete Namespaces and other base resources ---
     Log "Deleting resources from kustomization (including namespaces)..."
@@ -116,6 +124,13 @@ try {
     if (Test-Path $tmpDir) {
         Remove-Item -Path $tmpDir -Recurse -Force
         Log "Removed .tmp directory"
+    }
+
+    # --- Cleanup .env file ---
+    $envFile = Join-Path (Split-Path -Parent $scriptRoot) '.env'
+    if (Test-Path $envFile) {
+        Remove-Item -Path $envFile -Force
+        Log "Removed .env file"
     }
 
     Log "Teardown complete."
