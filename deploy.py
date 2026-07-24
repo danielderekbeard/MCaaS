@@ -768,7 +768,7 @@ def main():
             "helm", "upgrade", "--install", "mcaas-opensearch", "opensearch/opensearch",
             "--namespace", "security-ops",
             "--values", str(PROJECT_ROOT / "deploy" / "values" / "opensearch.yaml"),
-            "--wait", "--timeout", "5m"
+            "--wait", "--timeout", "10m"
         ])
         wait_for_resource("security-ops", "mcaas-opensearch")
 
@@ -783,16 +783,16 @@ def main():
         deploy_wazuh(effective_wazuh_dir)
 
         logging.info("Waiting for Wazuh components to be ready...")
-        run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-manager", "-n", "wazuh", "--timeout=5m"], check=False)
-        run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-indexer", "-n", "wazuh", "--timeout=5m"], check=False)
-        run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-dashboard", "-n", "wazuh", "--timeout=5m"], check=False)
+        run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-manager", "-n", "wazuh", "--timeout=10m"], check=False)
+        run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-indexer", "-n", "wazuh", "--timeout=10m"], check=False)
+        run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-dashboard", "-n", "wazuh", "--timeout=10m"], check=False)
 
         logging.info("Deploying Shuffle (OCI chart)...")
         run_command([
             "helm", "upgrade", "--install", "mcaas-shuffle", "oci://ghcr.io/shuffle/charts/shuffle",
             "--namespace", "security-ops",
             "--values", str(PROJECT_ROOT / "deploy" / "values" / "shuffle.yaml"),
-            "--wait", "--timeout", "5m"
+            "--wait", "--timeout", "8m"
         ])
         wait_for_resource("security-ops", "mcaas-shuffle")
 
@@ -801,7 +801,7 @@ def main():
             "helm", "upgrade", "--install", "zammad", "zammad/zammad",
             "--namespace", "managed-it",
             "--values", str(PROJECT_ROOT / "deploy" / "values" / "zammad.yaml"),
-            "--wait", "--timeout", "5m"
+            "--wait", "--timeout", "8m"
         ])
         wait_for_resource("managed-it", "zammad-zammad-scheduler")
         wait_for_resource("managed-it", "zammad-zammad-websocket")
@@ -813,7 +813,7 @@ def main():
             "--version", "0.11.4",
             "--namespace", "grc",
             "--values", str(PROJECT_ROOT / "deploy" / "values" / "ciso-assistant.yaml"),
-            "--wait", "--timeout", "5m"
+            "--wait", "--timeout", "8m"
         ])
         wait_for_resource("grc", "ciso-assistant-frontend")
         wait_for_resource("grc", "ciso-assistant-backend")
