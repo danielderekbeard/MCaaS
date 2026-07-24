@@ -1,3 +1,15 @@
+# =============================================================================
+# MCaaS Zammad Helm Values (Zammad chart v16.4.6+)
+# =============================================================================
+# Key notes:
+# - Redis sub-chart: cloudpirates-redis (replaced Bitnami in v16.0.0)
+# - Memcached sub-chart: cloudpirates-memcached (replaced Bitnami in v16.0.0)
+# - When zammadConfig.redis.enabled=true, Zammad templates override host/port
+#   to use <release>-redis:6379 (ignoring zammadConfig.redis.host)
+# - zammadConfig.redis.pass is only a boolean trigger; actual password comes
+#   from the K8s secret referenced by secrets.redis.secretName
+# =============================================================================
+
 zammadConfig:
   postgresql:
     enabled: false
@@ -11,11 +23,13 @@ zammadConfig:
     initialisation: false  # Skip elasticsearch-init container since ES is disabled
   redis:
     enabled: true
+    # NOTE: host is ignored by Zammad templates when redis sub-chart is enabled.
+    # The actual service name is derived from the Helm release name: <release>-redis
     host: "mcaas-zammad-redis"
     port: 6379
-    pass: "zammad"
+    pass: "zammad"  # Only a boolean trigger; actual password comes from K8s secret
 
-# Use our existing secrets for PostgreSQL and Redis
+# Use existing secrets for PostgreSQL and Redis
 secrets:
   postgresql:
     useExisting: true
@@ -26,14 +40,19 @@ secrets:
     secretName: "mcaas-zammad-redis-pass"
     secretKey: "redis-password"
 
-# Disable the Bitnami sub-charts (redundant with zammadConfig conditions, but explicit)
+# Disable sub-charts (redundant with zammadConfig conditions, but explicit)
 postgresql:
   enabled: false
 elasticsearch:
   enabled: false
 
-# Configure the Bitnami Redis sub-chart to use our existing secret
+# Configure the cloudpirates-redis sub-chart to use our existing secret.
+# When auth.existingSecret is set, the chart uses that secret and does NOT
+# create its own secret. auth.existingSecretPasswordKey specifies which key
+# in the secret contains the password (default in cloudpirates-redis is "",
+# so we must set it explicitly).
 redis:
+  architecture: standalone
   auth:
     existingSecret: "mcaas-zammad-redis-pass"
     existingSecretPasswordKey: "redis-password"
@@ -41,7 +60,7 @@ redis:
 # Enable Ingress to expose the Zammad UI externally
 ingress:
   enabled: true
-  className: "nginx" # Specify your ingress controller class
+  className: "nginx"
   hosts:
     # IMPORTANT: Replace zammad.mcaas.example.com with your actual domain.
     # If you don't have a domain, set ingress.enabled=false and use port-forward instead.

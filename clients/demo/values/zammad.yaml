@@ -4,18 +4,49 @@ zammadConfig:
     host: "demo-postgresql.demo-managed-it.svc.cluster.local"
     port: 5432
     user: "postgres"
-    pass: ""
+    pass: ""  # Password comes from secrets.postgresql existing secret
     db: "zammad"
   elasticsearch:
     enabled: false
     initialisation: false
   redis:
     enabled: true
+    # NOTE: host is ignored by Zammad templates when redis sub-chart is enabled.
+    # The actual service name is derived from the Helm release name: <release>-redis
     host: "demo-zammad-redis"
     port: 6379
-    pass: "zammad"
+    pass: "zammad"  # Only a boolean trigger; actual password comes from K8s secret
+
+# Use existing secrets for PostgreSQL and Redis
 secrets:
   postgresql:
     useExisting: true
     secretName: "demo-postgresql-secret"
     secretKey: "postgres-password"
+  redis:
+    useExisting: true
+    secretName: "demo-zammad-redis-pass"
+    secretKey: "redis-password"
+
+# Disable sub-charts (redundant with zammadConfig conditions, but explicit)
+postgresql:
+  enabled: false
+elasticsearch:
+  enabled: false
+
+# Configure the cloudpirates-redis sub-chart to use our existing secret
+redis:
+  architecture: standalone
+  auth:
+    existingSecret: "demo-zammad-redis-pass"
+    existingSecretPasswordKey: "redis-password"
+
+# Enable Ingress to expose the Zammad UI externally
+ingress:
+  enabled: true
+  className: "nginx"
+  hosts:
+    - host: zammad.demo.mcaas.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
