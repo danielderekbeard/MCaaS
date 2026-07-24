@@ -40,7 +40,7 @@ create_secrets() {
             log "No .env file found. Generating passwords and creating .env file..."
             postgres_pw="${postgres_pw:-$(generate_password)}"
             opensearch_pw="${opensearch_pw:-$(generate_password)}"
-            printf "MCAAS_POSTGRES_PASSWORD=%s\nMCAAS_OPENSEARCH_PASSWORD=%s\n" "$postgres_pw" "$opensearch_pw" > "$env_file"
+            printf "MCAAS_POSTGRES_PASSWORD=%s\nMCAAS_OPENSEARCH_PASSWORD=%s\nMCAAS_REDIS_PASSWORD=zammad\n" "$postgres_pw" "$opensearch_pw" > "$env_file"
             log "Created ${env_file} with generated passwords. Back this file up for redeployments."
         else
             if [[ -z "$postgres_pw" ]]; then
@@ -54,17 +54,78 @@ create_secrets() {
         fi
     fi
 
+    # Generate Redis and Django secrets if not set
+    local redis_pw="${MCAAS_REDIS_PASSWORD:-zammad}"
+    local django_key="${MCAAS_DJANGO_SECRET_KEY:-}"
+
+    # Generate Django secret key if not provided
+    if [[ -z "$django_key" ]]; then
+        django_key="$(generate_password)"
+        # Append to .env file for future use
+        if [[ -f "$env_file" ]]; then
+            printf "\nMCAAS_DJANGO_SECRET_KEY=%s\n" "$django_key" >> "$env_file"
+            log "Generated MCAAS_DJANGO_SECRET_KEY and appended to ${env_file}."
+        fi
+    fi
+
     log "Creating/updating Kubernetes secrets..."
+
+    # 1. PostgreSQL secret in managed-it namespace (for Bitnami chart + Zammad)
     kubectl -n managed-it create secret generic mcaas-postgresql-secret \
         --from-literal=postgres-password="${postgres_pw}" \
         --from-literal=password="${postgres_pw}" \
         --dry-run=client -o yaml | kubectl apply -f -
     log "PostgreSQL secret created/updated in managed-it namespace."
 
+    # 2. OpenSearch secret in security-ops namespace (for OpenSearch chart + Shuffle)
     kubectl -n security-ops create secret generic mcaas-opensearch-secret \
         --from-literal=opensearch-password="${opensearch_pw}" \
+        --from-literal=SHUFFLE_OPENSEARCH_PASSWORD="${opensearch_pw}" \
         --dry-run=client -o yaml | kubectl apply -f -
     log "OpenSearch secret created/updated in security-ops namespace."
+
+    # 3. Redis secret in managed-it namespace (for Zammad's Redis sub-chart)
+    kubectl -n managed-it create secret generic mcaas-zammad-redis-pass \
+        --from-literal=redis-password="${redis_pw}" \
+        --dry-run=client -o yaml | kubectl apply -f -
+    log "Redis secret created/updated in managed-it namespace."
+
+    # 4. Cross-namespace PostgreSQL secret in grc namespace (for CISO Assistant)
+    kubectl -n grc create secret generic mcaas-postgresql-secret \
+        --from-literal=postgres-password="${postgres_pw}" \
+        --from-literal=password="${postgres_pw}" \
+        --dry-run=client -o yaml | kubectl apply -f -
+    log "PostgreSQL secret created/updated in grc namespace (for CISO Assistant)."
+
+    # 5. Django secret key for CISO Assistant in grc namespace
+    kubectl -n grc create secret generic mcaas-ciso-secret \
+        --from-literal=django-secret-key="${django_key}" \
+        --dry-run=client -o yaml | kubectl apply -f -
+    log "CISO Assistant Django secret created/updated in grc namespace."
+}
+
+# Create a database in the PostgreSQL instance (idempotent).
+# Usage: create_database <db_name>
+create_database() {
+    local db_name="$1"
+    local pod_name="mcaas-postgresql-0"
+    local namespace="managed-it"
+    local secret_name="mcaas-postgresql-secret"
+    local secret_key="postgres-password"
+
+    log "Ensuring database '${db_name}' exists in PostgreSQL..."
+    local pw
+    pw=$(kubectl get secret "${secret_name}" -n "${namespace}" -o "jsonpath={.data.${secret_key}}" 2>/dev/null | base64 -d)
+    if [[ -z "$pw" ]]; then
+        log "ERROR: Failed to retrieve password from secret '${secret_name}'."
+        exit 1
+    fi
+
+    # Use stdin to pass SQL (avoids PowerShell quoting issues on Windows cross-compat)
+    printf 'CREATE DATABASE "%s";\n' "${db_name}" | \
+        kubectl exec -i -n "${namespace}" "${pod_name}" -- \
+        env PGPASSWORD="${pw}" psql -U postgres -d postgres 2>/dev/null || true
+    log "Database '${db_name}' ensured in PostgreSQL."
 }
 
 # Generate self-signed TLS certificates for Wazuh
@@ -182,22 +243,29 @@ helm upgrade --install mcaas-shuffle oci://ghcr.io/shuffle/charts/shuffle \
   --wait --timeout 5m
 wait_for_deployment "security-ops" "mcaas-shuffle"
 
+# Create the zammad database before deploying Zammad.
+# Zammad's init job needs this database to exist when using an external DB.
+create_database "zammad"
+
 log "Deploying Zammad..."
-helm upgrade --install zammad zammad/zammad \
+helm upgrade --install mcaas-zammad zammad/zammad \
   --namespace managed-it \
   --values "${PROJECT_ROOT}/deploy/values/zammad.yaml" \
   --wait --timeout 5m
-wait_for_deployment "managed-it" "zammad-zammad-scheduler"
-wait_for_deployment "managed-it" "zammad-zammad-websocket"
-wait_for_deployment "managed-it" "zammad-zammad-web"
+wait_for_deployment "managed-it" "mcaas-zammad-zammad-scheduler"
+wait_for_deployment "managed-it" "mcaas-zammad-zammad-websocket"
+wait_for_deployment "managed-it" "mcaas-zammad-zammad-web"
+
+# Create the ciso-assistant database before deploying CISO Assistant.
+create_database "ciso-assistant"
 
 log "Deploying CISO Assistant..."
-helm upgrade --install ciso-assistant oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant \
+helm upgrade --install mcaas-ciso oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant \
   --version 0.11.4 \
   --namespace grc \
   --values "${PROJECT_ROOT}/deploy/values/ciso-assistant.yaml" \
   --wait --timeout 5m
-wait_for_deployment "grc" "ciso-assistant-frontend"
-wait_for_deployment "grc" "ciso-assistant-backend"
+wait_for_deployment "grc" "mcaas-ciso-frontend"
+wait_for_deployment "grc" "mcaas-ciso-backend"
 
 log "Deployment complete. Logs written to ${LOG_FILE}"
