@@ -192,15 +192,17 @@ def helm_release_exists(release_name, namespace):
     return result.returncode == 0
 
 
-def uninstall_helm_releases():
+def uninstall_helm_releases(cfg):
     """Uninstall all Helm releases in reverse deployment order."""
+    prefix = cfg["prefix"]
+    ns = cfg["namespaces"]
     # Releases listed in reverse deployment order
     releases = [
-        ("mcaas-ciso", "grc"),
-        ("mcaas-zammad", "managed-it"),
-        ("mcaas-shuffle", "security-ops"),
-        ("mcaas-opensearch", "security-ops"),
-        ("mcaas-postgresql", "managed-it"),
+        (f"{prefix}-ciso", ns["grc"]),
+        (f"{prefix}-zammad", ns["managed-it"]),
+        (f"{prefix}-shuffle", ns["security-ops"]),
+        (f"{prefix}-opensearch", ns["security-ops"]),
+        (f"{prefix}-postgresql", ns["managed-it"]),
     ]
 
     for release_name, namespace in releases:
@@ -212,9 +214,10 @@ def uninstall_helm_releases():
             logging.info(f"Helm release '{release_name}' not found in namespace '{namespace}', skipping.")
 
 
-def delete_wazuh_resources():
+def delete_wazuh_resources(cfg):
     """Delete Wazuh kustomize resources and namespace."""
     logging.info("Deleting Wazuh resources...")
+    wazuh_ns = cfg["namespaces"]["wazuh"]
 
     wazuh_env_dir = TMP_DIR / "wazuh-kubernetes" / "envs" / "local-env"
     if wazuh_env_dir.exists():
@@ -232,19 +235,21 @@ def delete_wazuh_resources():
 
     logging.info("Deleting Wazuh namespace...")
     run_command(
-        ["kubectl", "delete", "namespace", "wazuh", "--ignore-not-found=true"],
+        ["kubectl", "delete", "namespace", wazuh_ns, "--ignore-not-found=true"],
         check=False
     )
 
 
-def delete_secrets():
+def delete_secrets(cfg):
     """Delete Kubernetes secrets created by the deployment (5 secrets across 3 namespaces)."""
+    prefix = cfg["prefix"]
+    ns = cfg["namespaces"]
     secrets = [
-        ("mcaas-postgresql-secret", "managed-it"),
-        ("mcaas-postgresql-secret", "grc"),
-        ("mcaas-opensearch-secret", "security-ops"),
-        ("mcaas-zammad-redis-pass", "managed-it"),
-        ("mcaas-ciso-ciso-assistant-backend", "grc"),
+        (f"{prefix}-postgresql-secret", ns["managed-it"]),
+        (f"{prefix}-postgresql-secret", ns["grc"]),
+        (f"{prefix}-opensearch-secret", ns["security-ops"]),
+        (f"{prefix}-zammad-redis-pass", ns["managed-it"]),
+        (f"{prefix}-ciso-ciso-assistant-backend", ns["grc"]),
     ]
 
     for secret_name, namespace in secrets:
@@ -255,13 +260,15 @@ def delete_secrets():
         )
 
 
-def delete_pvcs():
+def delete_pvcs(cfg):
     """Delete persistent volume claims created by the stack."""
+    prefix = cfg["prefix"]
+    ns = cfg["namespaces"]
     pvc_labels = [
-        ("security-ops", "app.kubernetes.io/instance=mcaas-opensearch"),
-        ("managed-it", "app.kubernetes.io/instance=mcaas-postgresql"),
-        ("managed-it", "app.kubernetes.io/instance=mcaas-zammad"),
-        ("security-ops", "app.kubernetes.io/instance=mcaas-shuffle"),
+        (ns["security-ops"], f"app.kubernetes.io/instance={prefix}-opensearch"),
+        (ns["managed-it"], f"app.kubernetes.io/instance={prefix}-postgresql"),
+        (ns["managed-it"], f"app.kubernetes.io/instance={prefix}-zammad"),
+        (ns["security-ops"], f"app.kubernetes.io/instance={prefix}-shuffle"),
     ]
 
     for namespace, label in pvc_labels:
@@ -272,13 +279,25 @@ def delete_pvcs():
         )
 
 
-def delete_base_manifests():
+def delete_base_manifests(cfg):
     """Delete base kustomize manifests (namespaces, etc.)."""
-    logging.info("Deleting base kustomize manifests...")
-    run_command(
-        ["kubectl", "delete", "-k", str(PROJECT_ROOT / "deploy"), "--ignore-not-found=true"],
-        check=False
-    )
+    logging.info("Deleting base manifests...")
+    if cfg["client_name"] is not None:
+        # Client-specific: delete the client's namespaces.yaml directly
+        namespaces_file = cfg["client_dir"] / "namespaces.yaml"
+        if namespaces_file.exists():
+            run_command(
+                ["kubectl", "delete", "-f", str(namespaces_file), "--ignore-not-found=true"],
+                check=False
+            )
+        else:
+            logging.warning(f"Client namespaces file not found: {namespaces_file}")
+    else:
+        # Default: use the deploy/ kustomize directory
+        run_command(
+            ["kubectl", "delete", "-k", str(PROJECT_ROOT / "deploy"), "--ignore-not-found=true"],
+            check=False
+        )
 
 
 def cleanup_tmp():
@@ -296,6 +315,11 @@ def main():
     """Main teardown logic."""
     parser = argparse.ArgumentParser(description="Tear down MCaaS stack")
     parser.add_argument(
+        "--client",
+        help="Client name to tear down (loads clients/<name>/config.yaml). "
+             "If omitted, uses default mcaas configuration."
+    )
+    parser.add_argument(
         "--skip-namespaces", action="store_true",
         help="Skip deletion of namespaces (useful if other workloads share them)"
     )
@@ -309,34 +333,39 @@ def main():
     )
     args = parser.parse_args()
 
+    # Load configuration (default or client-specific)
+    cfg = load_client_config(args.client)
+    prefix = cfg["prefix"]
+    ns = cfg["namespaces"]
+
     try:
-        logging.info(f"Starting MCaaS teardown on {PLATFORM}")
+        logging.info(f"Starting MCaaS teardown on {PLATFORM} (client={cfg['client_name'] or 'default'}, prefix={prefix})")
 
         # 1. Uninstall Helm releases (reverse deployment order)
         logging.info("=== Uninstalling Helm releases ===")
-        uninstall_helm_releases()
+        uninstall_helm_releases(cfg)
 
         # 2. Delete Wazuh kustomize resources
         logging.info("=== Deleting Wazuh resources ===")
-        delete_wazuh_resources()
+        delete_wazuh_resources(cfg)
 
         # 3. Delete secrets
         logging.info("=== Deleting Kubernetes secrets ===")
-        delete_secrets()
+        delete_secrets(cfg)
 
         # 4. Delete PVCs (unless --skip-pvcs)
         if args.skip_pvcs:
             logging.info("Skipping PVC deletion (--skip-pvcs flag set).")
         else:
             logging.info("=== Deleting persistent volume claims ===")
-            delete_pvcs()
+            delete_pvcs(cfg)
 
         # 5. Delete base manifests / namespaces (unless --skip-namespaces)
         if args.skip_namespaces:
             logging.info("Skipping namespace deletion (--skip-namespaces flag set).")
         else:
             logging.info("=== Deleting base manifests and namespaces ===")
-            delete_base_manifests()
+            delete_base_manifests(cfg)
 
         # 6. Cleanup cloned repos (unless --skip-cleanup)
         if args.skip_cleanup:

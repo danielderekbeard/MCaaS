@@ -1,10 +1,13 @@
 name: Health Check MCaaS
 
 on:
-  workflow_dispatch: {}
-  # Can also be triggered on a schedule:
-  # schedule:
-  #   - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:
+    inputs:
+      client:
+        description: 'Client name (loads clients/<name>/config.yaml). Leave empty for default mcaas configuration.'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   health-check:
@@ -24,10 +27,38 @@ jobs:
       - name: Check Kubernetes cluster connectivity
         run: kubectl cluster-info
 
+      - name: Set configuration
+        id: config
+        shell: python
+        run: |
+          import yaml, os
+          client = "${{ inputs.client }}"
+          if client:
+              cfg_path = f"clients/{client}/config.yaml"
+              with open(cfg_path) as f:
+                  cfg = yaml.safe_load(f)
+              prefix = cfg["prefix"]
+              ns = cfg["namespaces"]
+              with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+                  out.write(f"prefix={prefix}\n")
+                  out.write(f"ns_security_ops={ns['security-ops']}\n")
+                  out.write(f"ns_managed_it={ns['managed-it']}\n")
+                  out.write(f"ns_grc={ns['grc']}\n")
+                  out.write(f"ns_wazuh={ns['wazuh']}\n")
+                  out.write(f"client={client}\n")
+          else:
+              with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+                  out.write("prefix=mcaas\n")
+                  out.write("ns_security_ops=security-ops\n")
+                  out.write("ns_managed_it=managed-it\n")
+                  out.write("ns_grc=grc\n")
+                  out.write("ns_wazuh=wazuh\n")
+                  out.write("client=\n")
+
       - name: Check all namespaces exist
         run: |
           echo "Checking required namespaces..."
-          for ns in managed-it security-ops grc wazuh; do
+          for ns in ${{ steps.config.outputs.ns_managed_it }} ${{ steps.config.outputs.ns_security_ops }} ${{ steps.config.outputs.ns_grc }} ${{ steps.config.outputs.ns_wazuh }}; do
             if kubectl get namespace "$ns" &> /dev/null; then
               echo "✅ Namespace $ns exists"
             else
@@ -40,7 +71,7 @@ jobs:
         run: |
           echo "Checking pod status across all MCaaS namespaces..."
           FAILED=false
-          for ns in managed-it security-ops grc wazuh; do
+          for ns in ${{ steps.config.outputs.ns_managed_it }} ${{ steps.config.outputs.ns_security_ops }} ${{ steps.config.outputs.ns_grc }} ${{ steps.config.outputs.ns_wazuh }}; do
             echo ""
             echo "=== Namespace: $ns ==="
             NOT_RUNNING=$(kubectl get pods -n "$ns" --no-headers 2>/dev/null | grep -v "Completed" | grep -v "Running" | grep -v "^$" || true)
@@ -61,7 +92,7 @@ jobs:
       - name: Check Helm releases
         run: |
           echo "Checking Helm release status..."
-          for ns in managed-it security-ops grc; do
+          for ns in ${{ steps.config.outputs.ns_managed_it }} ${{ steps.config.outputs.ns_security_ops }} ${{ steps.config.outputs.ns_grc }}; do
             echo ""
             echo "=== Namespace: $ns ==="
             helm list -n "$ns" 2>/dev/null || echo "No releases in $ns"
@@ -71,13 +102,14 @@ jobs:
         run: |
           echo "Checking service endpoints..."
           echo ""
+          P="${{ steps.config.outputs.prefix }}"
           declare -A services=(
-            ["PostgreSQL"]="managed-it/mcaas-postgresql:5432"
-            ["OpenSearch"]="security-ops/mcaas-opensearch:9200"
-            ["Wazuh Dashboard"]="wazuh/wazuh-dashboard:443"
-            ["Shuffle"]="security-ops/mcaas-shuffle:5001"
-            ["Zammad"]="managed-it/zammad-zammad-web:80"
-            ["CISO Assistant"]="grc/ciso-assistant-frontend:80"
+            ["PostgreSQL"]="${{ steps.config.outputs.ns_managed_it }}/${P}-postgresql:5432"
+            ["OpenSearch"]="${{ steps.config.outputs.ns_security_ops }}/${P}-opensearch:9200"
+            ["Wazuh Dashboard"]="${{ steps.config.outputs.ns_wazuh }}/wazuh-dashboard:443"
+            ["Shuffle"]="${{ steps.config.outputs.ns_security_ops }}/${P}-shuffle:5001"
+            ["Zammad"]="${{ steps.config.outputs.ns_managed_it }}/zammad-zammad-web:80"
+            ["CISO Assistant"]="${{ steps.config.outputs.ns_grc }}/ciso-assistant-frontend:80"
           )
           for svc in "${!services[@]}"; do
             IFS='/' read -r ns rest <<< "${services[$svc]}"

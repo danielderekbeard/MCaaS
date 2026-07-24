@@ -1,7 +1,13 @@
 name: Health Check MCaaS (Windows)
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      client:
+        description: 'Client name (loads clients/<name>/config.yaml). Leave empty for default mcaas configuration.'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   health-check:
@@ -25,10 +31,38 @@ jobs:
       - name: Check Kubernetes cluster connectivity
         run: kubectl cluster-info
 
+      - name: Set configuration
+        id: config
+        shell: python
+        run: |
+          import yaml, os
+          client = "${{ inputs.client }}"
+          if client:
+              cfg_path = f"clients/{client}/config.yaml"
+              with open(cfg_path) as f:
+                  cfg = yaml.safe_load(f)
+              prefix = cfg["prefix"]
+              ns = cfg["namespaces"]
+              with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+                  out.write(f"prefix={prefix}\n")
+                  out.write(f"ns_security_ops={ns['security-ops']}\n")
+                  out.write(f"ns_managed_it={ns['managed-it']}\n")
+                  out.write(f"ns_grc={ns['grc']}\n")
+                  out.write(f"ns_wazuh={ns['wazuh']}\n")
+                  out.write(f"client={client}\n")
+          else:
+              with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+                  out.write("prefix=mcaas\n")
+                  out.write("ns_security_ops=security-ops\n")
+                  out.write("ns_managed_it=managed-it\n")
+                  out.write("ns_grc=grc\n")
+                  out.write("ns_wazuh=wazuh\n")
+                  out.write("client=\n")
+
       - name: Check all namespaces exist
         run: |
           Write-Host "Checking required namespaces..."
-          foreach ($ns in @('managed-it', 'security-ops', 'grc', 'wazuh')) {
+          foreach ($ns in @('${{ steps.config.outputs.ns_managed_it }}', '${{ steps.config.outputs.ns_security_ops }}', '${{ steps.config.outputs.ns_grc }}', '${{ steps.config.outputs.ns_wazuh }}')) {
             if (kubectl get namespace $ns 2>$null) {
               Write-Host "✅ Namespace $ns exists"
             } else {
@@ -41,7 +75,7 @@ jobs:
         run: |
           Write-Host "Checking pod status across all MCaaS namespaces..."
           $failed = $false
-          foreach ($ns in @('managed-it', 'security-ops', 'grc', 'wazuh')) {
+          foreach ($ns in @('${{ steps.config.outputs.ns_managed_it }}', '${{ steps.config.outputs.ns_security_ops }}', '${{ steps.config.outputs.ns_grc }}', '${{ steps.config.outputs.ns_wazuh }}')) {
             Write-Host ""
             Write-Host "=== Namespace: $ns ==="
             $pods = kubectl get pods -n $ns --no-headers 2>$null
@@ -63,7 +97,7 @@ jobs:
       - name: Check Helm releases
         run: |
           Write-Host "Checking Helm release status..."
-          foreach ($ns in @('managed-it', 'security-ops', 'grc')) {
+          foreach ($ns in @('${{ steps.config.outputs.ns_managed_it }}', '${{ steps.config.outputs.ns_security_ops }}', '${{ steps.config.outputs.ns_grc }}')) {
             Write-Host ""
             Write-Host "=== Namespace: $ns ==="
             helm list -n $ns 2>$null
@@ -72,13 +106,14 @@ jobs:
       - name: Check service endpoints
         run: |
           Write-Host "Checking service endpoints..."
+          $prefix = "${{ steps.config.outputs.prefix }}"
           $services = @{
-            "PostgreSQL" = @("managed-it", "mcaas-postgresql")
-            "OpenSearch" = @("security-ops", "mcaas-opensearch")
-            "Wazuh Dashboard" = @("wazuh", "wazuh-dashboard")
-            "Shuffle" = @("security-ops", "mcaas-shuffle")
-            "Zammad" = @("managed-it", "zammad-zammad-web")
-            "CISO Assistant" = @("grc", "ciso-assistant-frontend")
+            "PostgreSQL" = @("${{ steps.config.outputs.ns_managed_it }}", "$prefix-postgresql")
+            "OpenSearch" = @("${{ steps.config.outputs.ns_security_ops }}", "$prefix-opensearch")
+            "Wazuh Dashboard" = @("${{ steps.config.outputs.ns_wazuh }}", "wazuh-dashboard")
+            "Shuffle" = @("${{ steps.config.outputs.ns_security_ops }}", "$prefix-shuffle")
+            "Zammad" = @("${{ steps.config.outputs.ns_managed_it }}", "zammad-zammad-web")
+            "CISO Assistant" = @("${{ steps.config.outputs.ns_grc }}", "ciso-assistant-frontend")
           }
           foreach ($svc in $services.Keys) {
             $ns = $services[$svc][0]

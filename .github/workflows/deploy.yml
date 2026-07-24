@@ -3,6 +3,11 @@ name: Deploy MCaaS
 on:
   workflow_dispatch:
     inputs:
+      client:
+        description: 'Client name (loads clients/<name>/config.yaml). Leave empty for default mcaas configuration.'
+        required: false
+        default: ''
+        type: string
       skip_health_check:
         description: 'Skip post-deploy health checks'
         required: false
@@ -33,7 +38,12 @@ jobs:
           chmod 600 $HOME/.kube/config
 
       - name: Deploy MCaaS stack
-        run: python deploy.py
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.client }}" ]; then
+            ARGS="--client ${{ inputs.client }}"
+          fi
+          python deploy.py $ARGS
         env:
           MCAAS_POSTGRES_PASSWORD: ${{ secrets.MCAAS_POSTGRES_PASSWORD }}
           MCAAS_OPENSEARCH_PASSWORD: ${{ secrets.MCAAS_OPENSEARCH_PASSWORD }}

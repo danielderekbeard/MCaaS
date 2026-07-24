@@ -1,7 +1,13 @@
 name: Teardown MCaaS
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      client:
+        description: 'Client name to tear down (loads clients/<name>/config.yaml). Leave empty for default mcaas configuration.'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   teardown:
@@ -24,4 +30,9 @@ jobs:
           chmod 600 $HOME/.kube/config
 
       - name: Teardown MCaaS stack
-        run: python teardown.py
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.client }}" ]; then
+            ARGS="--client ${{ inputs.client }}"
+          fi
+          python teardown.py $ARGS

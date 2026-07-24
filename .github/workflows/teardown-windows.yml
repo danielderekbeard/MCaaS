@@ -1,7 +1,13 @@
 name: Teardown MCaaS (Windows)
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      client:
+        description: 'Client name to tear down (loads clients/<name>/config.yaml). Leave empty for default mcaas configuration.'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   teardown:
@@ -26,4 +32,9 @@ jobs:
           [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.KUBE_CONFIG_DATA }}")) | Set-Content -Path "$kubeDir\config"
 
       - name: Teardown MCaaS stack
-        run: python teardown.py
+        run: |
+          $args = @()
+          if ("${{ inputs.client }}") {
+            $args = @("--client", "${{ inputs.client }}")
+          }
+          python teardown.py @args

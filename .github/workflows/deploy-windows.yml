@@ -3,6 +3,11 @@ name: Deploy MCaaS (Windows)
 on:
   workflow_dispatch:
     inputs:
+      client:
+        description: 'Client name (loads clients/<name>/config.yaml). Leave empty for default mcaas configuration.'
+        required: false
+        default: ''
+        type: string
       skip_health_check:
         description: 'Skip post-deploy health checks'
         required: false
@@ -37,7 +42,12 @@ jobs:
           [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.KUBE_CONFIG_DATA }}")) | Set-Content -Path "$kubeDir\config"
 
       - name: Deploy MCaaS stack
-        run: python deploy.py
+        run: |
+          $args = @()
+          if ("${{ inputs.client }}") {
+            $args = @("--client", "${{ inputs.client }}")
+          }
+          python deploy.py @args
         env:
           MCAAS_POSTGRES_PASSWORD: ${{ secrets.MCAAS_POSTGRES_PASSWORD }}
           MCAAS_OPENSEARCH_PASSWORD: ${{ secrets.MCAAS_OPENSEARCH_PASSWORD }}
