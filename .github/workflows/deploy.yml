@@ -1,7 +1,16 @@
 name: Deploy MCaaS
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      skip_health_check:
+        description: 'Skip post-deploy health checks'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 jobs:
   deploy:
@@ -11,6 +20,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Set up kubeconfig
         shell: bash
         run: |
@@ -18,15 +32,14 @@ jobs:
           echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
 
-      - name: Initialize Kubernetes secrets
-        run: bash ./scripts/init-secrets.sh
+      - name: Deploy MCaaS stack
+        run: python deploy.py
         env:
           MCAAS_POSTGRES_PASSWORD: ${{ secrets.MCAAS_POSTGRES_PASSWORD }}
           MCAAS_OPENSEARCH_PASSWORD: ${{ secrets.MCAAS_OPENSEARCH_PASSWORD }}
+          MCAAS_REDIS_PASSWORD: ${{ secrets.MCAAS_REDIS_PASSWORD }}
           MCAAS_DJANGO_SECRET_KEY: ${{ secrets.MCAAS_DJANGO_SECRET_KEY }}
 
-      - name: Deploy MCaaS stack
-        run: bash ./scripts/deploy.sh
-
       - name: Run service health checks
+        if: ${{ inputs.skip_health_check != 'true' }}
         run: bash ./scripts/test-services.sh

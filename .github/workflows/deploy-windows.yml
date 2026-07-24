@@ -1,7 +1,16 @@
 name: Deploy MCaaS (Windows)
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      skip_health_check:
+        description: 'Skip post-deploy health checks'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 jobs:
   deploy:
@@ -14,6 +23,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Set up kubeconfig
         run: |
           $kubeDir = "$HOME\.kube"
@@ -22,15 +36,14 @@ jobs:
           }
           [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.KUBE_CONFIG_DATA }}")) | Set-Content -Path "$kubeDir\config"
 
-      - name: Initialize Kubernetes secrets
-        run: ./scripts/init-secrets.ps1
+      - name: Deploy MCaaS stack
+        run: python deploy.py
         env:
           MCAAS_POSTGRES_PASSWORD: ${{ secrets.MCAAS_POSTGRES_PASSWORD }}
           MCAAS_OPENSEARCH_PASSWORD: ${{ secrets.MCAAS_OPENSEARCH_PASSWORD }}
+          MCAAS_REDIS_PASSWORD: ${{ secrets.MCAAS_REDIS_PASSWORD }}
           MCAAS_DJANGO_SECRET_KEY: ${{ secrets.MCAAS_DJANGO_SECRET_KEY }}
 
-      - name: Deploy MCaaS stack
-        run: ./scripts/deploy.ps1
-
       - name: Run service health checks
+        if: ${{ inputs.skip_health_check != 'true' }}
         run: ./scripts/test-services.ps1
