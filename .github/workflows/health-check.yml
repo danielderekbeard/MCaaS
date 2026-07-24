@@ -31,6 +31,12 @@ jobs:
           mkdir -p $HOME/.kube
           echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
+          # Patch kubeconfig to skip TLS verification for local self-signed clusters.
+          # The self-hosted runner connects to a local k3s/Rancher Desktop cluster
+          # whose API server uses a self-signed certificate that is not trusted.
+          # Without this, kubectl fails with "x509: certificate signed by unknown authority".
+          sed -i 's/^\(\s*\)certificate-authority-data:.*$/\1insecure-skip-tls-verify: true/' $HOME/.kube/config
+          sed -i 's/^\(\s*\)certificate-authority:.*$/\1insecure-skip-tls-verify: true/' $HOME/.kube/config
 
       - name: Check Kubernetes cluster connectivity
         run: kubectl cluster-info

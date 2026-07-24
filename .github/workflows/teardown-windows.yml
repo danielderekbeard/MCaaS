@@ -32,7 +32,19 @@ jobs:
         run: |
           $kubeDir = "$HOME\.kube"
           if (-not (Test-Path $kubeDir)) { New-Item -Path $kubeDir -ItemType Directory | Out-Null }
-          [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.KUBE_CONFIG_DATA }}")) | Set-Content -Path "$kubeDir\config"
+          $kubeConfigPath = "$kubeDir\config"
+          [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.KUBE_CONFIG_DATA }}")) | Set-Content -Path $kubeConfigPath
+          # Patch kubeconfig to skip TLS verification for local self-signed clusters.
+          # The self-hosted runner connects to a local k3s/Rancher Desktop cluster
+          # whose API server (127.0.0.1:6443) uses a self-signed certificate that
+          # is not in the Windows trust store. Without this, kubectl fails with
+          # "x509: certificate signed by unknown authority".
+          # Replace certificate-authority-data / certificate-authority entries
+          # with insecure-skip-tls-verify: true on all cluster definitions.
+          $yaml = Get-Content $kubeConfigPath -Raw
+          $yaml = $yaml -replace '(?m)^(\s*)certificate-authority-data:.*$', '$1insecure-skip-tls-verify: true'
+          $yaml = $yaml -replace '(?m)^(\s*)certificate-authority:.*$', '$1insecure-skip-tls-verify: true'
+          $yaml | Set-Content $kubeConfigPath -NoNewline
 
       - name: Teardown MCaaS stack
         run: |
