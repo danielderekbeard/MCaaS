@@ -1,23 +1,27 @@
-name: Clean up deployment
+name: Teardown MCaaS
 
 on:
   workflow_dispatch: {}
 
 jobs:
   teardown:
-    runs-on: [self-hosted, windows]
-    defaults:
-      run:
-        shell: powershell
+    runs-on: [self-hosted, linux]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Set up kubeconfig
+        shell: bash
         run: |
-          $kubeDir = "$HOME\.kube"; if (-not (Test-Path $kubeDir)) { New-Item -Path $kubeDir -ItemType Directory | Out-Null }
-          [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.KUBE_CONFIG_DATA }}")) | Set-Content -Path "$kubeDir\config"
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
 
       - name: Teardown MCaaS stack
-        run: ./scripts/teardown.ps1
+        run: python teardown.py

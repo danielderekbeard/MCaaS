@@ -2,6 +2,9 @@ name: Health Check MCaaS
 
 on:
   workflow_dispatch: {}
+  # Can also be triggered on a schedule:
+  # schedule:
+  #   - cron: '0 */6 * * *'  # Every 6 hours
 
 jobs:
   health-check:
@@ -20,3 +23,68 @@ jobs:
 
       - name: Check Kubernetes cluster connectivity
         run: kubectl cluster-info
+
+      - name: Check all namespaces exist
+        run: |
+          echo "Checking required namespaces..."
+          for ns in managed-it security-ops grc wazuh; do
+            if kubectl get namespace "$ns" &> /dev/null; then
+              echo "✅ Namespace $ns exists"
+            else
+              echo "❌ Namespace $ns not found"
+              exit 1
+            fi
+          done
+
+      - name: Check all pods are running
+        run: |
+          echo "Checking pod status across all MCaaS namespaces..."
+          FAILED=false
+          for ns in managed-it security-ops grc wazuh; do
+            echo ""
+            echo "=== Namespace: $ns ==="
+            NOT_RUNNING=$(kubectl get pods -n "$ns" --no-headers 2>/dev/null | grep -v "Completed" | grep -v "Running" | grep -v "^$" || true)
+            if [ -n "$NOT_RUNNING" ]; then
+              echo "⚠️  Some pods are not running:"
+              echo "$NOT_RUNNING"
+              FAILED=true
+            else
+              echo "✅ All pods running"
+            fi
+          done
+          if [ "$FAILED" = true ]; then
+            echo ""
+            echo "❌ Some pods are not in Running state"
+            exit 1
+          fi
+
+      - name: Check Helm releases
+        run: |
+          echo "Checking Helm release status..."
+          for ns in managed-it security-ops grc; do
+            echo ""
+            echo "=== Namespace: $ns ==="
+            helm list -n "$ns" 2>/dev/null || echo "No releases in $ns"
+          done
+
+      - name: Check service endpoints
+        run: |
+          echo "Checking service endpoints..."
+          echo ""
+          declare -A services=(
+            ["PostgreSQL"]="managed-it/mcaas-postgresql:5432"
+            ["OpenSearch"]="security-ops/mcaas-opensearch:9200"
+            ["Wazuh Dashboard"]="wazuh/wazuh-dashboard:443"
+            ["Shuffle"]="security-ops/mcaas-shuffle:5001"
+            ["Zammad"]="managed-it/zammad-zammad-web:80"
+            ["CISO Assistant"]="grc/ciso-assistant-frontend:80"
+          )
+          for svc in "${!services[@]}"; do
+            IFS='/' read -r ns rest <<< "${services[$svc]}"
+            IFS=':' read -r svc_name port <<< "$rest"
+            if kubectl get svc "$svc_name" -n "$ns" &> /dev/null; then
+              echo "✅ $svc ($ns/$svc_name) found on port $port"
+            else
+              echo "❌ $svc ($ns/$svc_name) not found"
+            fi
+          done

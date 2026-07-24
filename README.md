@@ -149,16 +149,77 @@ When using `deploy.py`, secrets are created automatically via kubectl commands e
 
 ## CI / GitHub Actions
 
-This repository includes GitHub Actions workflows for deployment, teardown, and health checks.
-You can run them manually from the "Actions" tab in the GitHub repository.
+This repository includes six GitHub Actions workflows for automated deployment, teardown, and health checks. All workflows use the `workflow_dispatch` trigger, meaning they are run manually from the **Actions** tab in the GitHub repository.
 
-The workflow uses the following repository secrets:
+### Available Workflows
 
-- `KUBE_CONFIG_DATA` (base64-encoded kubeconfig)
-- `MCAAS_POSTGRES_PASSWORD`
-- `MCAAS_OPENSEARCH_PASSWORD`
-- `MCAAS_REDIS_PASSWORD` (optional; defaults to `zammad`)
-- `MCAAS_DJANGO_SECRET_KEY` (optional; auto-generated if not set)
+| Workflow | File | Runner | Description |
+|----------|------|--------|-------------|
+| Deploy MCaaS | `deploy.yml` | `self-hosted, linux` | Full stack deployment |
+| Deploy MCaaS (Windows) | `deploy-windows.yml` | `self-hosted, windows` | Full stack deployment on Windows |
+| Teardown MCaaS | `teardown.yml` | `self-hosted, linux` | Remove all MCaaS resources |
+| Teardown MCaaS (Windows) | `teardown-windows.yml` | `self-hosted, windows` | Remove all MCaaS resources on Windows |
+| Health Check MCaaS | `health-check.yml` | `self-hosted, linux` | Verify all services are healthy |
+| Health Check MCaaS (Windows) | `health-check-windows.yml` | `self-hosted, windows` | Verify all services are healthy on Windows |
+
+### Setting Up Self-Hosted Runners
+
+Since these workflows deploy to your local or private Kubernetes cluster, they require **self-hosted GitHub Actions runners**. To set one up:
+
+1. Go to your repository on GitHub → **Settings** → **Actions** → **Runners** → **New self-hosted runner**
+2. Follow the OS-specific instructions to download and configure the runner
+3. Make sure the runner machine has the following installed:
+   - `kubectl` (configured with access to your cluster)
+   - `helm` v3+
+   - `python` 3.7+ (the workflow uses `actions/setup-python@v5`)
+   - `git`
+4. Start the runner service
+
+### Required Repository Secrets
+
+Configure these in **Settings** → **Secrets and variables** → **Actions** → **New repository secret**:
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `KUBE_CONFIG_DATA` | ✅ Yes | Base64-encoded kubeconfig file for your cluster |
+| `MCAAS_POSTGRES_PASSWORD` | ✅ Yes | PostgreSQL superuser password |
+| `MCAAS_OPENSEARCH_PASSWORD` | ✅ Yes | OpenSearch admin password |
+| `MCAAS_REDIS_PASSWORD` | No | Redis password for Zammad (defaults to `zammad`) |
+| `MCAAS_DJANGO_SECRET_KEY` | No | Django secret key for CISO Assistant (auto-generated if not set) |
+
+#### Creating the KUBE_CONFIG_DATA secret
+
+Encode your kubeconfig as base64:
+
+**Linux/macOS:**
+```bash
+base64 -w 0 ~/.kube/config
+```
+
+**Windows (PowerShell):**
+```powershell
+[Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Get-Content -Raw "$HOME\.kube\config")))
+```
+
+Copy the output and paste it as the `KUBE_CONFIG_DATA` repository secret value.
+
+### Running a Workflow
+
+1. Go to **Actions** tab in your GitHub repository
+2. Select the workflow you want to run (e.g., "Deploy MCaaS")
+3. Click **Run workflow**
+4. For deploy workflows, you can optionally check **Skip health check** to skip the post-deployment verification
+5. Monitor the run in real-time from the Actions tab
+
+### Health Check Details
+
+The health check workflows verify:
+
+- ✅ Kubernetes cluster connectivity (`kubectl cluster-info`)
+- ✅ All required namespaces exist (`managed-it`, `security-ops`, `grc`, `wazuh`)
+- ✅ All pods are in `Running` or `Completed` state
+- ✅ Helm releases are deployed and listed
+- ✅ Service endpoints exist for all six MCaaS services
 
 ## Windows Deployment Notes
 

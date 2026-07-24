@@ -24,3 +24,68 @@ jobs:
 
       - name: Check Kubernetes cluster connectivity
         run: kubectl cluster-info
+
+      - name: Check all namespaces exist
+        run: |
+          Write-Host "Checking required namespaces..."
+          foreach ($ns in @('managed-it', 'security-ops', 'grc', 'wazuh')) {
+            if (kubectl get namespace $ns 2>$null) {
+              Write-Host "✅ Namespace $ns exists"
+            } else {
+              Write-Host "❌ Namespace $ns not found"
+              exit 1
+            }
+          }
+
+      - name: Check all pods are running
+        run: |
+          Write-Host "Checking pod status across all MCaaS namespaces..."
+          $failed = $false
+          foreach ($ns in @('managed-it', 'security-ops', 'grc', 'wazuh')) {
+            Write-Host ""
+            Write-Host "=== Namespace: $ns ==="
+            $pods = kubectl get pods -n $ns --no-headers 2>$null
+            $notRunning = $pods | Where-Object { $_ -notmatch 'Running|Completed' -and $_ -ne '' }
+            if ($notRunning) {
+              Write-Host "⚠️  Some pods are not running:"
+              $notRunning | ForEach-Object { Write-Host $_ }
+              $failed = $true
+            } else {
+              Write-Host "✅ All pods running"
+            }
+          }
+          if ($failed) {
+            Write-Host ""
+            Write-Host "❌ Some pods are not in Running state"
+            exit 1
+          }
+
+      - name: Check Helm releases
+        run: |
+          Write-Host "Checking Helm release status..."
+          foreach ($ns in @('managed-it', 'security-ops', 'grc')) {
+            Write-Host ""
+            Write-Host "=== Namespace: $ns ==="
+            helm list -n $ns 2>$null
+          }
+
+      - name: Check service endpoints
+        run: |
+          Write-Host "Checking service endpoints..."
+          $services = @{
+            "PostgreSQL" = @("managed-it", "mcaas-postgresql")
+            "OpenSearch" = @("security-ops", "mcaas-opensearch")
+            "Wazuh Dashboard" = @("wazuh", "wazuh-dashboard")
+            "Shuffle" = @("security-ops", "mcaas-shuffle")
+            "Zammad" = @("managed-it", "zammad-zammad-web")
+            "CISO Assistant" = @("grc", "ciso-assistant-frontend")
+          }
+          foreach ($svc in $services.Keys) {
+            $ns = $services[$svc][0]
+            $name = $services[$svc][1]
+            if (kubectl get svc $name -n $ns 2>$null) {
+              Write-Host "✅ $svc ($ns/$name) found"
+            } else {
+              Write-Host "❌ $svc ($ns/$name) not found"
+            }
+          }
