@@ -35,6 +35,99 @@ PLATFORM = platform.system()
 IS_WINDOWS = PLATFORM == "Windows"
 IS_POSIX = PLATFORM in ("Linux", "Darwin")
 
+# --- Default Configuration ---
+# When --client is not specified, these defaults preserve the original
+# hardcoded behaviour of the script.
+DEFAULT_CONFIG = {
+    "prefix": "mcaas",
+    "namespaces": {
+        "managed-it": "managed-it",
+        "security-ops": "security-ops",
+        "grc": "grc",
+        "wazuh": "wazuh",
+    },
+    "domain": "mcaas.local",
+    "database_name": "mcaas",
+    "wazuh_version": "4.14.6",
+    "ingress": {
+        "zammad_host": "zammad.mcaas.local",
+        "ciso_host": "ciso.mcaas.local",
+    },
+    "client_name": None,
+    "env_prefix": "MCAAS",
+    "client_dir": None,
+    "values_dir": PROJECT_ROOT / "deploy" / "values",
+}
+
+
+def load_client_config(client_name):
+    """Load a client-specific configuration from clients/<name>/config.yaml.
+
+    When *client_name* is ``None``, returns :data:`DEFAULT_CONFIG` so that
+    calling the script without ``--client`` behaves exactly as before.
+
+    The returned dict contains:
+      - prefix: resource name prefix (e.g. "mcaas" or "acme")
+      - namespaces: dict mapping logical names to actual K8s namespace names
+      - domain: base domain for ingress hosts
+      - database_name: PostgreSQL database name
+      - wazuh_version: Wazuh version tag for kustomize/git checkout
+      - ingress: dict with zammad_host and ciso_host
+      - client_name: the client name (or None for default)
+      - env_prefix: uppercase prefix for environment variables
+      - client_dir: Path to the client directory (or None for default)
+      - values_dir: Path to the Helm values directory for this client
+    """
+    if client_name is None:
+        return DEFAULT_CONFIG
+
+    client_dir = PROJECT_ROOT / "clients" / client_name
+    config_path = client_dir / "config.yaml"
+
+    if not config_path.exists():
+        logging.error(f"Client configuration not found: {config_path}")
+        sys.exit(1)
+
+    with open(config_path, "r") as f:
+        raw = yaml.safe_load(f)
+
+    # Validate required fields
+    for field in ("name", "prefix", "domain", "database_name"):
+        if field not in raw:
+            logging.error(f"Client config missing required field: {field}")
+            sys.exit(1)
+
+    prefix = raw["prefix"]
+
+    # Build namespace mapping — auto-generate from prefix if not specified
+    namespaces = raw.get("namespaces", {})
+    ns = {}
+    for key in ("managed-it", "security-ops", "grc", "wazuh"):
+        ns[key] = namespaces.get(key, f"{prefix}-{key}")
+
+    # Build ingress host mapping
+    ingress_raw = raw.get("ingress", {})
+    ingress = {
+        "zammad_host": ingress_raw.get("zammad_host", f"zammad.{raw['domain']}"),
+        "ciso_host": ingress_raw.get("ciso_host", f"ciso.{raw['domain']}"),
+    }
+
+    # Environment variable prefix: MCAAS, ACME, etc. (uppercased, dashes→underscores)
+    env_prefix = prefix.upper().replace("-", "_")
+
+    return {
+        "prefix": prefix,
+        "namespaces": ns,
+        "domain": raw["domain"],
+        "database_name": raw["database_name"],
+        "wazuh_version": raw.get("wazuh_version", DEFAULT_CONFIG["wazuh_version"]),
+        "ingress": ingress,
+        "client_name": client_name,
+        "env_prefix": env_prefix,
+        "client_dir": client_dir,
+        "values_dir": client_dir / "values",
+    }
+
 # --- Logging Setup ---
 LOG_DIR.mkdir(exist_ok=True)
 log_file = LOG_DIR / f"teardown-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%SZ')}.log"
