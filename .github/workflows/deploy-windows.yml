@@ -50,14 +50,12 @@ jobs:
           # whose API server (127.0.0.1:6443) uses a self-signed certificate that
           # is not in the Windows trust store. Without this, kubectl fails with
           # "x509: certificate signed by unknown authority".
-          kubectl config set-cluster --insecure-skip-tls-verify=true $(kubectl config current-context --kubeconfig $kubeConfigPath) --kubeconfig $kubeConfigPath 2>$null
-          if ($LASTEXITCODE -ne 0) {
-            # Fallback: patch every cluster entry in the kubeconfig
-            $yaml = Get-Content $kubeConfigPath -Raw
-            $yaml = $yaml -replace '(?m)^(\s*)certificate-authority-data:.*$', '$1insecure-skip-tls-verify: true'
-            $yaml = $yaml -replace '(?m)^(\s*)certificate-authority:.*$', '$1insecure-skip-tls-verify: true'
-            $yaml | Set-Content $kubeConfigPath
-          }
+          # Replace certificate-authority-data / certificate-authority entries
+          # with insecure-skip-tls-verify: true on all cluster definitions.
+          $yaml = Get-Content $kubeConfigPath -Raw
+          $yaml = $yaml -replace '(?m)^(\s*)certificate-authority-data:.*$', '$1insecure-skip-tls-verify: true'
+          $yaml = $yaml -replace '(?m)^(\s*)certificate-authority:.*$', '$1insecure-skip-tls-verify: true'
+          $yaml | Set-Content $kubeConfigPath -NoNewline
 
       - name: Deploy MCaaS stack
         run: |
