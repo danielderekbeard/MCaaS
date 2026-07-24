@@ -34,7 +34,6 @@ try {
     helm repo add bitnami https://charts.bitnami.com/bitnami | Out-Null
     helm repo add opensearch https://opensearch-project.github.io/helm-charts | Out-Null
     helm repo add zammad https://zammad.github.io/zammad-helm | Out-Null
-    helm repo add wazuh https://wazuh.github.io/wazuh-helm-charts/ | Out-Null
     # Wazuh, Shuffle, and CISO-Assistant do not use traditional Helm repos.
     helm repo update | Out-Null
     
@@ -63,7 +62,7 @@ try {
     Log "Preparing Wazuh manifests for Windows..."
     # The wazuh-kubernetes repo uses symlinks which don't work well on Windows.
     # We must run their provided script to generate the certs and configs.
-    Push-Location -Path (Join-Path $wazuhDir 'wazuh')
+    Push-Location -Path $wazuhDir
     try {
         # This script generates certificates and config files, replacing the broken symlinks.
         & ./generate-local-env.ps1
