@@ -30,7 +30,10 @@ for release in "${!releases[@]}"; do
 done
 
 log "Cleaning up cloned repositories..."
-rm -rf /tmp/wazuh-kubernetes /tmp/shuffle
+TMP_DIR="$(cd "${SCRIPT_ROOT}/.." && pwd)/.tmp"
+mkdir -p "${TMP_DIR}"
+log "Cleaning up cloned repositories in ${TMP_DIR}..."
+rm -rf "${TMP_DIR}/wazuh-kubernetes" "${TMP_DIR}/shuffle"
 
 log "Deleting persistent volume claims..."
 kubectl delete pvc -n security-ops -l app.kubernetes.io/instance=mcaas-opensearch,app=wazuh-indexer --ignore-not-found=true

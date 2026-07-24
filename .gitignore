@@ -1,6 +1,7 @@
 .env
 .kube
 .kubeconfig
+.kubeconfig-github.yaml
 *.local
 *.log
 **/node_modules

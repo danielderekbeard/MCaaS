@@ -8,7 +8,8 @@ from pathlib import Path
 
 # --- Configuration ---
 SCRIPT_ROOT = Path(__file__).parent.resolve()
-PROJECT_ROOT = SCRIPT_ROOT.parent
+# Keep PROJECT_ROOT consistent with deploy.py (script located at project root)
+PROJECT_ROOT = SCRIPT_ROOT
 LOG_DIR = PROJECT_ROOT / "logs"
 TMP_DIR = PROJECT_ROOT / ".tmp"
 
@@ -71,6 +72,8 @@ def main():
                 logging.info(f"Helm release '{release}' not found, skipping.")
 
         logging.info("Deleting Wazuh resources from manifests...")
+        # Ensure temporary directory exists and clone into it
+        TMP_DIR.mkdir(parents=True, exist_ok=True)
         wazuh_repo_path = TMP_DIR / "wazuh-kubernetes"
         if not wazuh_repo_path.exists():
             run_command([
