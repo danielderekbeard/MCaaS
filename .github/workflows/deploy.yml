@@ -26,11 +26,6 @@ jobs:
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
 
-      - name: Clone required chart repositories
-        run: |
-          git clone --depth 1 https://github.com/shuffle/shuffle.git /tmp/shuffle
-          git clone --depth 1 https://github.com/wazuh/wazuh-kubernetes.git /tmp/wazuh-kubernetes
-
       - name: Initialize Kubernetes secrets
         run: bash ./scripts/init-secrets.sh
         env:
