@@ -5,7 +5,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: self-hosted # Assuming this runner is Windows
+    runs-on: [self-hosted, windows]
     defaults:
       run:
         shell: powershell

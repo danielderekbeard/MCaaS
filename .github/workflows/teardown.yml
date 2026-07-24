@@ -5,7 +5,7 @@ on:
 
 jobs:
   teardown:
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux]
 
     steps:
       - name: Checkout repository
