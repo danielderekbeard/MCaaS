@@ -34,3 +34,6 @@ jobs:
 
       - name: Deploy MCaaS stack
         run: bash ./scripts/deploy.sh
+
+      - name: Run service health checks
+        run: bash ./scripts/test-services.sh
