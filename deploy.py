@@ -88,7 +88,9 @@ def load_client_config(client_name: str | None) -> dict:
 
     if not config_file.exists():
         logging.error(f"Client config not found: {config_file}")
-        logging.error(f"Create the directory clients/{client_name}/ with a config.yaml file.")
+        logging.error(
+            f"Create the directory clients/{client_name}/ with a config.yaml file."
+        )
         sys.exit(1)
 
     logging.info(f"Loading client configuration from {config_file}")
@@ -96,7 +98,9 @@ def load_client_config(client_name: str | None) -> dict:
         raw = yaml.safe_load(f)
 
     if not raw or "client" not in raw:
-        logging.error(f"Invalid config file: missing top-level 'client' key in {config_file}")
+        logging.error(
+            f"Invalid config file: missing top-level 'client' key in {config_file}"
+        )
         sys.exit(1)
 
     c = raw["client"]
@@ -140,17 +144,17 @@ def load_client_config(client_name: str | None) -> dict:
 
 # --- Logging Setup ---
 LOG_DIR.mkdir(exist_ok=True)
-log_file = LOG_DIR / f"deploy-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%SZ')}.log"
+log_file = (
+    LOG_DIR / f"deploy-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%SZ')}.log"
+)
 
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(message)s",
     datefmt="%Y-%m-%dT%H:%M:%SZ",
-    handlers=[
-        logging.FileHandler(log_file),
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stdout)],
 )
+
 
 def ensure_wazuh_certs(wazuh_dir: Path) -> None:
     """Generate self-signed TLS certificates required by the Wazuh kustomization.
@@ -176,26 +180,36 @@ def ensure_wazuh_certs(wazuh_dir: Path) -> None:
     """
     # --- Directory layout (must match kustomization.yml secretGenerator paths) ---
     indexer_cluster = wazuh_dir / "wazuh" / "certs" / "indexer_cluster"
-    dashboard_http  = wazuh_dir / "wazuh" / "certs" / "dashboard_http"
+    dashboard_http = wazuh_dir / "wazuh" / "certs" / "dashboard_http"
 
     for directory in (indexer_cluster, dashboard_http):
         directory.mkdir(parents=True, exist_ok=True)
 
-    root_ca_key  = indexer_cluster / "root-ca-key.pem"
+    root_ca_key = indexer_cluster / "root-ca-key.pem"
     root_ca_cert = indexer_cluster / "root-ca.pem"
 
     # --- 1. Generate root CA (if not already present) ---
     if not root_ca_cert.exists() or not root_ca_key.exists():
         logging.info("Generating self-signed root CA for Wazuh TLS …")
-        run_command([
-            "openssl", "req",
-            "-x509", "-new", "-nodes",
-            "-newkey", "rsa:2048",
-            "-keyout", str(root_ca_key),
-            "-out", str(root_ca_cert),
-            "-days", "3650",
-            "-subj", "/CN=WazuhRootCA/O=Wazuh/L=California/C=US",
-        ])
+        run_command(
+            [
+                "openssl",
+                "req",
+                "-x509",
+                "-new",
+                "-nodes",
+                "-newkey",
+                "rsa:2048",
+                "-keyout",
+                str(root_ca_key),
+                "-out",
+                str(root_ca_cert),
+                "-days",
+                "3650",
+                "-subj",
+                "/CN=WazuhRootCA/O=Wazuh/L=California/C=US",
+            ]
+        )
     else:
         logging.info("Root CA already exists – reusing it.")
 
@@ -208,48 +222,68 @@ def ensure_wazuh_certs(wazuh_dir: Path) -> None:
         # Key
         run_command(["openssl", "genrsa", "-out", str(key_path), "2048"])
         # CSR
-        run_command([
-            "openssl", "req", "-new",
-            "-key", str(key_path),
-            "-out", str(csr_path),
-            "-subj", f"/CN={cn}/OU=Wazuh/O=Wazuh/L=California/C=US",
-        ])
+        run_command(
+            [
+                "openssl",
+                "req",
+                "-new",
+                "-key",
+                str(key_path),
+                "-out",
+                str(csr_path),
+                "-subj",
+                f"/CN={cn}/OU=Wazuh/O=Wazuh/L=California/C=US",
+            ]
+        )
         # Sign
-        run_command([
-            "openssl", "x509", "-req",
-            "-in", str(csr_path),
-            "-CA", str(root_ca_cert),
-            "-CAkey", str(root_ca_key),
-            "-CAcreateserial",
-            "-out", str(cert_path),
-            "-days", "3650",
-        ])
+        run_command(
+            [
+                "openssl",
+                "x509",
+                "-req",
+                "-in",
+                str(csr_path),
+                "-CA",
+                str(root_ca_cert),
+                "-CAkey",
+                str(root_ca_key),
+                "-CAcreateserial",
+                "-out",
+                str(cert_path),
+                "-days",
+                "3650",
+            ]
+        )
 
     # --- 2. Indexer cluster certificates ---
     # Node cert (CN=indexer)
     _sign_cert(
-        "indexer", "indexer",
+        "indexer",
+        "indexer",
         indexer_cluster / "node-key.pem",
         indexer_cluster / "node.csr",
         indexer_cluster / "node.pem",
     )
     # Admin client cert (used by the dashboard to authenticate to the indexer)
     _sign_cert(
-        "admin", "admin",
+        "admin",
+        "admin",
         indexer_cluster / "admin-key.pem",
         indexer_cluster / "admin.csr",
         indexer_cluster / "admin.pem",
     )
     # Dashboard-to-indexer cert
     _sign_cert(
-        "dashboard", "dashboard",
+        "dashboard",
+        "dashboard",
         indexer_cluster / "dashboard-key.pem",
         indexer_cluster / "dashboard.csr",
         indexer_cluster / "dashboard.pem",
     )
     # Filebeat cert
     _sign_cert(
-        "filebeat", "filebeat",
+        "filebeat",
+        "filebeat",
         indexer_cluster / "filebeat-key.pem",
         indexer_cluster / "filebeat.csr",
         indexer_cluster / "filebeat.pem",
@@ -257,7 +291,8 @@ def ensure_wazuh_certs(wazuh_dir: Path) -> None:
 
     # --- 3. Dashboard HTTP certificate ---
     _sign_cert(
-        "dashboard_http", "dashboard",
+        "dashboard_http",
+        "dashboard",
         dashboard_http / "key.pem",
         dashboard_http / "dashboard_http.csr",
         dashboard_http / "cert.pem",
@@ -266,6 +301,7 @@ def ensure_wazuh_certs(wazuh_dir: Path) -> None:
     shutil.copy2(str(root_ca_cert), str(dashboard_http / "root-ca.pem"))
 
     logging.info("Wazuh TLS certificates generated successfully.")
+
 
 def find_openssl() -> str | None:
     """Locate the ``openssl`` executable.
@@ -315,7 +351,9 @@ def ensure_openssl_on_path() -> None:
         os.environ["PATH"] = openssl_dir + os.pathsep + os.environ.get("PATH", "")
         logging.info(f"Added OpenSSL directory to PATH: {openssl_dir}")
     else:
-        logging.error("OpenSSL not found. Install OpenSSL or Git for Windows and try again.")
+        logging.error(
+            "OpenSSL not found. Install OpenSSL or Git for Windows and try again."
+        )
         sys.exit(1)
 
 
@@ -335,19 +373,50 @@ def check_prerequisites():
 
     required_tools = ["kubectl", "helm", "git", "openssl"]
     missing = []
-    
+
     for tool in required_tools:
         if shutil.which(tool) is None:
             missing.append(tool)
-    
+
     if missing:
         logging.error(f"Missing required tools: {', '.join(missing)}")
         logging.error("Please install the missing tools and try again.")
         if IS_WINDOWS:
             logging.error("On Windows, ensure kubectl, helm, and git are in your PATH.")
         sys.exit(1)
-    
+
     logging.info("All prerequisites are available.")
+
+
+def check_kubectl_connectivity():
+    """Verify that kubectl can authenticate to the cluster.
+
+    Runs ``kubectl auth can-i create namespaces`` as a lightweight check.
+    Exits early with a clear message if the kubeconfig is missing, malformed,
+    or the credentials are rejected — preventing cryptic failures later.
+    """
+    logging.info("Verifying kubectl connectivity...")
+    result = run_command(
+        ["kubectl", "auth", "can-i", "create", "namespaces"],
+        check=False,
+    )
+    if result.returncode != 0:
+        logging.error("kubectl cannot authenticate to the cluster.")
+        logging.error(
+            "Check that your kubeconfig is valid and credentials are not expired."
+        )
+        logging.error("STDERR: %s", result.stderr.strip())
+        sys.exit(1)
+    if "yes" not in (result.stdout or "").lower():
+        logging.error(
+            "kubectl authenticated but lacks permission to create namespaces."
+        )
+        logging.error(
+            "Ensure the service account has cluster-admin or equivalent RBAC."
+        )
+        sys.exit(1)
+    logging.info("kubectl connectivity verified.")
+
 
 def run_command(command, check=True, shell=False, cwd=None, input_data=None):
     """Runs a command and logs its output.
@@ -356,7 +425,7 @@ def run_command(command, check=True, shell=False, cwd=None, input_data=None):
     ``kubectl`` invocations so that no resources are actually created or
     modified. The flag is appended only to list‑type commands to avoid breaking
     string commands that may already contain their own options.
-    
+
     Args:
         command: List of command arguments (preferred) or string if shell=True
         check: Raise exception if command fails
@@ -382,7 +451,7 @@ def run_command(command, check=True, shell=False, cwd=None, input_data=None):
 
     cmd_str = " ".join(command) if isinstance(command, list) else command
     logging.info(f"Running: {cmd_str}")
-    
+
     try:
         result = subprocess.run(
             command,
@@ -391,14 +460,14 @@ def run_command(command, check=True, shell=False, cwd=None, input_data=None):
             capture_output=True,
             shell=shell,
             cwd=cwd,
-            input=input_data
+            input=input_data,
         )
-        
+
         if result.stdout:
             logging.debug(f"STDOUT:\n{result.stdout}")
         if result.stderr:
             logging.debug(f"STDERR:\n{result.stderr}")
-        
+
         return result
     except subprocess.CalledProcessError as e:
         logging.error(f"Command failed with exit code {e.returncode}")
@@ -412,6 +481,7 @@ def run_command(command, check=True, shell=False, cwd=None, input_data=None):
         logging.error(f"Command not found: {cmd_str}")
         logging.error(f"Error: {e}")
         raise
+
 
 def wait_for_resource(namespace, resource_name, timeout="5m"):
     """Waits for a Kubernetes Deployment or StatefulSet to become ready.
@@ -428,18 +498,24 @@ def wait_for_resource(namespace, resource_name, timeout="5m"):
     wait entirely.
     """
     if globals().get("DRY_RUN", False):
-        logging.info(f"Dry‑run: skipping wait for resource '{resource_name}' in namespace '{namespace}'.")
+        logging.info(
+            f"Dry‑run: skipping wait for resource '{resource_name}' in namespace '{namespace}'."
+        )
         return
 
-    logging.info(f"Waiting for resource '{resource_name}' in namespace '{namespace}' to be ready...")
+    logging.info(
+        f"Waiting for resource '{resource_name}' in namespace '{namespace}' to be ready..."
+    )
 
     # Try Deployment first
     deploy_cmd = [
-        "kubectl", "wait",
+        "kubectl",
+        "wait",
         "--for=condition=available",
-        "--namespace", namespace,
+        "--namespace",
+        namespace,
         f"deployment/{resource_name}",
-        f"--timeout={timeout}"
+        f"--timeout={timeout}",
     ]
     result = run_command(deploy_cmd, check=False)
     if result is not None and result.returncode == 0:
@@ -459,16 +535,21 @@ def wait_for_resource(namespace, resource_name, timeout="5m"):
     for label_key in ("app.kubernetes.io/instance", "app.kubernetes.io/name", "app"):
         label_selector = f"{label_key}={resource_name}"
         pod_cmd = [
-            "kubectl", "wait",
+            "kubectl",
+            "wait",
             "--for=condition=ready",
-            "--namespace", namespace,
+            "--namespace",
+            namespace,
             "pod",
-            "-l", label_selector,
-            f"--timeout={timeout}"
+            "-l",
+            label_selector,
+            f"--timeout={timeout}",
         ]
         result = run_command(pod_cmd, check=False)
         if result is not None and result.returncode == 0:
-            logging.info(f"StatefulSet '{resource_name}' pods are ready (label {label_selector}).")
+            logging.info(
+                f"StatefulSet '{resource_name}' pods are ready (label {label_selector})."
+            )
             return
 
     # If neither label worked, try StatefulSet polling.  The resource_name
@@ -476,53 +557,84 @@ def wait_for_resource(namespace, resource_name, timeout="5m"):
     # StatefulSet name (e.g. release "mcaas-opensearch" creates StatefulSet
     # "opensearch-cluster-master").  Discover the actual StatefulSet names
     # using the app.kubernetes.io/instance label.
-    logging.info(f"Label-based wait did not find pods for '{resource_name}', discovering StatefulSets...")
+    logging.info(
+        f"Label-based wait did not find pods for '{resource_name}', discovering StatefulSets..."
+    )
 
     import time
+
     deadline = time.time() + _parse_timeout(timeout)
 
     # Discover actual StatefulSet names associated with this Helm release.
     discover_cmd = [
-        "kubectl", "get", "statefulset",
-        "--namespace", namespace,
-        "-l", f"app.kubernetes.io/instance={resource_name}",
-        "-o", "jsonpath={.items[*].metadata.name}"
+        "kubectl",
+        "get",
+        "statefulset",
+        "--namespace",
+        namespace,
+        "-l",
+        f"app.kubernetes.io/instance={resource_name}",
+        "-o",
+        "jsonpath={.items[*].metadata.name}",
     ]
     discover_result = subprocess.run(discover_cmd, capture_output=True, text=True)
     statefulset_names = []
     if discover_result.returncode == 0 and discover_result.stdout.strip():
         statefulset_names = discover_result.stdout.strip().split()
-        logging.info(f"Discovered StatefulSets for release '{resource_name}': {statefulset_names}")
+        logging.info(
+            f"Discovered StatefulSets for release '{resource_name}': {statefulset_names}"
+        )
 
     # Also try the resource_name directly in case it IS the StatefulSet name.
     if resource_name not in statefulset_names:
         check_cmd = [
-            "kubectl", "get", "statefulset", resource_name,
-            "--namespace", namespace,
-            "-o", "jsonpath={.metadata.name}"
+            "kubectl",
+            "get",
+            "statefulset",
+            resource_name,
+            "--namespace",
+            namespace,
+            "-o",
+            "jsonpath={.metadata.name}",
         ]
         check_result = subprocess.run(check_cmd, capture_output=True, text=True)
         if check_result.returncode == 0 and check_result.stdout.strip():
             statefulset_names.append(resource_name)
 
     if not statefulset_names:
-        logging.warning(f"No StatefulSets found for '{resource_name}' in namespace '{namespace}'")
+        logging.warning(
+            f"No StatefulSets found for '{resource_name}' in namespace '{namespace}'"
+        )
 
     # Poll each discovered StatefulSet until all are ready.
     while time.time() < deadline:
         all_ready = True
         for sts_name in statefulset_names:
             cmd = [
-                "kubectl", "get", "statefulset", sts_name,
-                "--namespace", namespace,
-                "-o", "jsonpath={.status.readyReplicas}"
+                "kubectl",
+                "get",
+                "statefulset",
+                sts_name,
+                "--namespace",
+                namespace,
+                "-o",
+                "jsonpath={.status.readyReplicas}",
             ]
             result = subprocess.run(cmd, capture_output=True, text=True)
-            ready = int(result.stdout.strip()) if result.returncode == 0 and result.stdout.strip() else 0
+            ready = (
+                int(result.stdout.strip())
+                if result.returncode == 0 and result.stdout.strip()
+                else 0
+            )
             cmd2 = [
-                "kubectl", "get", "statefulset", sts_name,
-                "--namespace", namespace,
-                "-o", "jsonpath={.spec.replicas}"
+                "kubectl",
+                "get",
+                "statefulset",
+                sts_name,
+                "--namespace",
+                namespace,
+                "-o",
+                "jsonpath={.spec.replicas}",
             ]
             result2 = subprocess.run(cmd2, capture_output=True, text=True)
             desired = int(result2.stdout.strip()) if result2.stdout.strip() else 1
@@ -530,12 +642,18 @@ def wait_for_resource(namespace, resource_name, timeout="5m"):
                 all_ready = False
                 break
             else:
-                logging.info(f"StatefulSet '{sts_name}' is ready ({ready}/{desired} replicas).")
+                logging.info(
+                    f"StatefulSet '{sts_name}' is ready ({ready}/{desired} replicas)."
+                )
         if all_ready and statefulset_names:
-            logging.info(f"All StatefulSets for '{resource_name}' in namespace '{namespace}' are ready.")
+            logging.info(
+                f"All StatefulSets for '{resource_name}' in namespace '{namespace}' are ready."
+            )
             return
         time.sleep(5)
-    raise RuntimeError(f"Timeout waiting for StatefulSets for '{resource_name}' in namespace '{namespace}'")
+    raise RuntimeError(
+        f"Timeout waiting for StatefulSets for '{resource_name}' in namespace '{namespace}'"
+    )
 
 
 def _parse_timeout(timeout):
@@ -549,12 +667,13 @@ def _parse_timeout(timeout):
         return int(timeout[:-1])
     return int(timeout)
 
+
 def clone_or_use_wazuh_repo(wazuh_dir):
     """Clone Wazuh repo or use existing.
-    
+
     On Windows, we handle symlinks by cloning with --no-checkout and then
     checking out individual directories. On POSIX systems, normal clone works.
-    
+
     We need both ``envs/local-env`` (the environment overlay) and ``wazuh/``
     (the base manifests) for kustomize to resolve the full resource tree.
     """
@@ -564,71 +683,96 @@ def clone_or_use_wazuh_repo(wazuh_dir):
     if wazuh_dir.exists() and (wazuh_dir / "envs" / "local-env").exists():
         logging.info(f"Wazuh repo already exists at {wazuh_dir}")
         return wazuh_dir
-    
+
     # Remove a broken/incomplete clone so we can start fresh.
     # On Windows, shutil.rmtree can fail on read-only files or locked
     # directories.  Use a robust removal that handles permission errors.
     if wazuh_dir.exists():
         logging.warning(f"Removing incomplete Wazuh clone at {wazuh_dir}")
         import stat
+
         def _remove_readonly(func, path, _exc_info):
             """Error handler for rmtree that clears the read-only flag and retries."""
             os.chmod(path, stat.S_IWRITE)
             func(path)
+
         shutil.rmtree(wazuh_dir, onerror=_remove_readonly)
-    
+
     logging.info("Cloning Wazuh repository...")
     wazuh_dir.parent.mkdir(parents=True, exist_ok=True)
-    
+
     try:
         if IS_WINDOWS:
             # On Windows, clone with --depth 1 --no-checkout to avoid symlink
             # issues, then selectively check out only the directories we need.
             # Use --branch v4.14.6 to match the remote kustomize ref.
-            run_command([
-                "git", "clone",
-                "--depth", "1",
-                "--no-checkout",
-                "--branch", "v4.14.6",
-                "https://github.com/wazuh/wazuh-kubernetes.git",
-                str(wazuh_dir)
-            ])
+            run_command(
+                [
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--no-checkout",
+                    "--branch",
+                    "v4.14.6",
+                    "https://github.com/wazuh/wazuh-kubernetes.git",
+                    str(wazuh_dir),
+                ]
+            )
             # Check out the directories required by kustomize:
             #   envs/local-env  — the environment overlay
             #   wazuh           — the base manifests referenced by the overlay
-            run_command([
-                "git", "checkout", "HEAD", "--",
-                "envs/local-env",
-                "wazuh",
-            ], cwd=str(wazuh_dir))
+            run_command(
+                [
+                    "git",
+                    "checkout",
+                    "HEAD",
+                    "--",
+                    "envs/local-env",
+                    "wazuh",
+                ],
+                cwd=str(wazuh_dir),
+            )
             # Validate the checkout — if the critical directory is missing the
             # clone is unusable and we should clean up and fall back.
             if not (wazuh_dir / "envs" / "local-env").exists():
-                logging.error("Wazuh clone checkout incomplete — envs/local-env missing")
+                logging.error(
+                    "Wazuh clone checkout incomplete — envs/local-env missing"
+                )
                 shutil.rmtree(wazuh_dir, ignore_errors=True)
                 return None
         else:
             # On POSIX, normal clone works fine. Use --branch v4.14.6 to
             # match the remote kustomize ref.
-            run_command([
-                "git", "clone",
-                "--depth", "1",
-                "--branch", "v4.14.6",
-                "https://github.com/wazuh/wazuh-kubernetes.git",
-                str(wazuh_dir)
-            ])
+            run_command(
+                [
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--branch",
+                    "v4.14.6",
+                    "https://github.com/wazuh/wazuh-kubernetes.git",
+                    str(wazuh_dir),
+                ]
+            )
     except subprocess.CalledProcessError:
-        logging.warning("Failed to clone Wazuh repo locally, will use remote URL with kubectl")
+        logging.warning(
+            "Failed to clone Wazuh repo locally, will use remote URL with kubectl"
+        )
         # Clean up any partial clone so deploy_wazuh doesn't try to use it.
         if wazuh_dir.exists():
             import stat as _stat
+
             def _ro_handler(func, path, _exc):
                 os.chmod(path, _stat.S_IWRITE)
                 func(path)
+
             shutil.rmtree(wazuh_dir, onerror=_ro_handler)
         return None
-    
+
     return wazuh_dir
+
 
 def deploy_wazuh(wazuh_dir, cfg):
     """Deploy Wazuh using ``kubectl apply``.
@@ -672,30 +816,46 @@ def deploy_wazuh(wazuh_dir, cfg):
             # Fallback to remote if the clone is unavailable; this may still
             # error, but we log the situation for visibility.
             kustomize_path = remote_kustomize
-            logging.warning("Dry‑run: local Wazuh clone missing; falling back to remote manifests (may fail).")
+            logging.warning(
+                "Dry‑run: local Wazuh clone missing; falling back to remote manifests (may fail)."
+            )
     else:
         # Normal execution path.
         if IS_WINDOWS:
             # On Windows we prefer a local clone with self-signed certs to
             # avoid symlink and remote-fetch issues.
-            if wazuh_dir and wazuh_dir.exists() and (wazuh_dir / "envs" / "local-env").exists():
+            if (
+                wazuh_dir
+                and wazuh_dir.exists()
+                and (wazuh_dir / "envs" / "local-env").exists()
+            ):
                 ensure_wazuh_certs(wazuh_dir)
                 kustomize_path = str(wazuh_dir / "envs" / "local-env")
-                logging.info("Running on Windows – using local Wazuh clone with generated TLS certificates.")
+                logging.info(
+                    "Running on Windows – using local Wazuh clone with generated TLS certificates."
+                )
             else:
                 kustomize_path = remote_kustomize
-                logging.warning("Running on Windows – local clone unavailable or incomplete; falling back to remote manifests.")
+                logging.warning(
+                    "Running on Windows – local clone unavailable or incomplete; falling back to remote manifests."
+                )
         else:
             # POSIX: Prefer a local clone; if certs are missing, generate them.
             local_kustomize = wazuh_dir and (wazuh_dir / "envs" / "local-env")
             if local_kustomize and local_kustomize.exists():
-                required_cert = wazuh_dir / "wazuh" / "certs" / "indexer_cluster" / "root-ca.pem"
+                required_cert = (
+                    wazuh_dir / "wazuh" / "certs" / "indexer_cluster" / "root-ca.pem"
+                )
                 if not required_cert.exists():
-                    logging.info("Wazuh TLS certificates not found – generating them now.")
+                    logging.info(
+                        "Wazuh TLS certificates not found – generating them now."
+                    )
                     ensure_wazuh_certs(wazuh_dir)
                 kustomize_path = str(local_kustomize)
             else:
-                logging.warning("Local Wazuh clone is incomplete or missing; falling back to remote manifests")
+                logging.warning(
+                    "Local Wazuh clone is incomplete or missing; falling back to remote manifests"
+                )
                 kustomize_path = remote_kustomize
 
     # Delete the wazuh-storage StorageClass BEFORE applying kustomize.
@@ -705,10 +865,10 @@ def deploy_wazuh(wazuh_dir, cfg):
     # existing StorageClass has a different (immutable) provisioner.
     # Pre-deleting ensures the apply succeeds and lets us replace it after.
     logging.info("Pre-deleting wazuh-storage StorageClass (immutable fields)...")
-    run_command([
-        "kubectl", "delete", "storageclass", "wazuh-storage",
-        "--ignore-not-found"
-    ], check=False)
+    run_command(
+        ["kubectl", "delete", "storageclass", "wazuh-storage", "--ignore-not-found"],
+        check=False,
+    )
 
     # Execute the apply command.
     run_command(["kubectl", "apply", "-k", kustomize_path])
@@ -720,39 +880,43 @@ def deploy_wazuh(wazuh_dir, cfg):
     # We also set WaitForFirstConsumer so the local-path provisioner knows
     # which node to provision volumes on before binding PVCs.
     logging.info("Replacing wazuh-storage StorageClass for k3s compatibility...")
-    run_command([
-        "kubectl", "delete", "storageclass", "wazuh-storage",
-        "--ignore-not-found"
-    ], check=False)
-    run_command([
-        "kubectl", "apply", "-f", "-"
-    ], input_data=(
-        "apiVersion: storage.k8s.io/v1\n"
-        "kind: StorageClass\n"
-        "metadata:\n"
-        "  name: wazuh-storage\n"
-        "provisioner: rancher.io/local-path\n"
-        "reclaimPolicy: Delete\n"
-        "volumeBindingMode: WaitForFirstConsumer\n"
-    ))
+    run_command(
+        ["kubectl", "delete", "storageclass", "wazuh-storage", "--ignore-not-found"],
+        check=False,
+    )
+    run_command(
+        ["kubectl", "apply", "-f", "-"],
+        input_data=(
+            "apiVersion: storage.k8s.io/v1\n"
+            "kind: StorageClass\n"
+            "metadata:\n"
+            "  name: wazuh-storage\n"
+            "provisioner: rancher.io/local-path\n"
+            "reclaimPolicy: Delete\n"
+            "volumeBindingMode: WaitForFirstConsumer\n"
+        ),
+    )
+
 
 def load_env_file():
     """Load environment variables from .env file if it exists."""
     env_file = PROJECT_ROOT / ".env"
     if env_file.exists():
         logging.info(f"Loading environment from {env_file}")
-        with open(env_file, 'r') as f:
+        with open(env_file, "r") as f:
             for line in f:
                 line = line.strip()
-                if line and not line.startswith('#'):
-                    key, sep, value = line.partition('=')
+                if line and not line.startswith("#"):
+                    key, sep, value = line.partition("=")
                     if sep:
                         os.environ[key.strip()] = value.strip()
+
 
 def generate_password(length=24):
     """Generate a random password with letters, digits, and symbols."""
     charset = string.ascii_letters + string.digits + "!@#$%^&*"
-    return ''.join(secrets.choice(charset) for _ in range(length))
+    return "".join(secrets.choice(charset) for _ in range(length))
+
 
 def create_secrets(cfg: dict):
     """Create Kubernetes secrets required by the MCaaS stack.
@@ -795,21 +959,28 @@ def create_secrets(cfg: dict):
 
     if not postgres_pw or not opensearch_pw:
         if not env_file.exists():
-            logging.info("No .env file found. Generating passwords and creating .env file...")
+            logging.info(
+                "No .env file found. Generating passwords and creating .env file..."
+            )
             postgres_pw = postgres_pw or generate_password()
             opensearch_pw = opensearch_pw or generate_password()
             env_file.write_text(
-                f"{env_postgres}={postgres_pw}\n"
-                f"{env_opensearch}={opensearch_pw}\n"
+                f"{env_postgres}={postgres_pw}\n" f"{env_opensearch}={opensearch_pw}\n"
             )
-            logging.info(f"Created {env_file} with generated passwords. Back this file up for redeployments.")
+            logging.info(
+                f"Created {env_file} with generated passwords. Back this file up for redeployments."
+            )
         else:
             # .env exists but variables may not have been loaded properly
             if not postgres_pw:
-                logging.error(f"{env_postgres} is not set. Set it in your .env file or environment.")
+                logging.error(
+                    f"{env_postgres} is not set. Set it in your .env file or environment."
+                )
                 sys.exit(1)
             if not opensearch_pw:
-                logging.error(f"{env_opensearch} is not set. Set it in your .env file or environment.")
+                logging.error(
+                    f"{env_opensearch} is not set. Set it in your .env file or environment."
+                )
                 sys.exit(1)
 
     logging.info("Creating/updating Kubernetes secrets...")
@@ -819,27 +990,40 @@ def create_secrets(cfg: dict):
     # PostgreSQL secret (in the managed-it namespace)
     pg_secret_name = f"{prefix}-postgresql-secret"
     proc = subprocess.run(
-        ["kubectl", "-n", ns["managed-it"], "create", "secret", "generic",
-         pg_secret_name,
-         f"--from-literal=postgres-password={postgres_pw}",
-         f"--from-literal=password={postgres_pw}",
-         "--dry-run=client", "-o", "yaml"],
-        capture_output=True, text=True
+        [
+            "kubectl",
+            "-n",
+            ns["managed-it"],
+            "create",
+            "secret",
+            "generic",
+            pg_secret_name,
+            f"--from-literal=postgres-password={postgres_pw}",
+            f"--from-literal=password={postgres_pw}",
+            "--dry-run=client",
+            "-o",
+            "yaml",
+        ],
+        capture_output=True,
+        text=True,
     )
     if proc.returncode != 0:
         logging.error(f"Failed to generate PostgreSQL secret manifest: {proc.stderr}")
         raise RuntimeError("Failed to create PostgreSQL secret")
     if dry_run:
-        logging.info(f"Dry‑run: would apply PostgreSQL secret '{pg_secret_name}'. Manifest:\n{proc.stdout}")
+        logging.info(
+            f"Dry‑run: would apply PostgreSQL secret '{pg_secret_name}'. Manifest:\n{proc.stdout}"
+        )
     else:
         apply_proc = subprocess.run(
-            ["kubectl", "apply", "-f", "-"],
-            input=proc.stdout, text=True
+            ["kubectl", "apply", "-f", "-"], input=proc.stdout, text=True
         )
         if apply_proc.returncode != 0:
             logging.error("Failed to apply PostgreSQL secret")
             raise RuntimeError("Failed to apply PostgreSQL secret")
-        logging.info(f"PostgreSQL secret '{pg_secret_name}' created/updated in {ns['managed-it']} namespace.")
+        logging.info(
+            f"PostgreSQL secret '{pg_secret_name}' created/updated in {ns['managed-it']} namespace."
+        )
 
     # OpenSearch secret — includes both opensearch-password (for the OpenSearch
     # chart) and SHUFFLE_OPENSEARCH_PASSWORD (for Shuffle's extraEnvVarsSecret).
@@ -848,27 +1032,40 @@ def create_secrets(cfg: dict):
     # separate SHUFFLE_OPENSEARCH_PASSWORD key.
     os_secret_name = f"{prefix}-opensearch-secret"
     proc = subprocess.run(
-        ["kubectl", "-n", ns["security-ops"], "create", "secret", "generic",
-         os_secret_name,
-         f"--from-literal=opensearch-password={opensearch_pw}",
-         f"--from-literal=SHUFFLE_OPENSEARCH_PASSWORD={opensearch_pw}",
-         "--dry-run=client", "-o", "yaml"],
-        capture_output=True, text=True
+        [
+            "kubectl",
+            "-n",
+            ns["security-ops"],
+            "create",
+            "secret",
+            "generic",
+            os_secret_name,
+            f"--from-literal=opensearch-password={opensearch_pw}",
+            f"--from-literal=SHUFFLE_OPENSEARCH_PASSWORD={opensearch_pw}",
+            "--dry-run=client",
+            "-o",
+            "yaml",
+        ],
+        capture_output=True,
+        text=True,
     )
     if proc.returncode != 0:
         logging.error(f"Failed to generate OpenSearch secret manifest: {proc.stderr}")
         raise RuntimeError("Failed to create OpenSearch secret")
     if dry_run:
-        logging.info(f"Dry‑run: would apply OpenSearch secret '{os_secret_name}'. Manifest:\n{proc.stdout}")
+        logging.info(
+            f"Dry‑run: would apply OpenSearch secret '{os_secret_name}'. Manifest:\n{proc.stdout}"
+        )
     else:
         apply_proc = subprocess.run(
-            ["kubectl", "apply", "-f", "-"],
-            input=proc.stdout, text=True
+            ["kubectl", "apply", "-f", "-"], input=proc.stdout, text=True
         )
         if apply_proc.returncode != 0:
             logging.error("Failed to apply OpenSearch secret")
             raise RuntimeError("Failed to apply OpenSearch secret")
-        logging.info(f"OpenSearch secret '{os_secret_name}' created/updated in {ns['security-ops']} namespace.")
+        logging.info(
+            f"OpenSearch secret '{os_secret_name}' created/updated in {ns['security-ops']} namespace."
+        )
 
     # Redis secret for Zammad (in the managed-it namespace).
     # The Zammad chart's Redis sub-chart requires a secret with the key
@@ -876,26 +1073,39 @@ def create_secrets(cfg: dict):
     redis_pw = os.environ.get(env_redis, "zammad")
     redis_secret_name = f"{prefix}-zammad-redis-pass"
     proc = subprocess.run(
-        ["kubectl", "-n", ns["managed-it"], "create", "secret", "generic",
-         redis_secret_name,
-         f"--from-literal=redis-password={redis_pw}",
-         "--dry-run=client", "-o", "yaml"],
-        capture_output=True, text=True
+        [
+            "kubectl",
+            "-n",
+            ns["managed-it"],
+            "create",
+            "secret",
+            "generic",
+            redis_secret_name,
+            f"--from-literal=redis-password={redis_pw}",
+            "--dry-run=client",
+            "-o",
+            "yaml",
+        ],
+        capture_output=True,
+        text=True,
     )
     if proc.returncode != 0:
         logging.error(f"Failed to generate Redis secret manifest: {proc.stderr}")
         raise RuntimeError("Failed to create Redis secret")
     if dry_run:
-        logging.info(f"Dry‑run: would apply Redis secret '{redis_secret_name}'. Manifest:\n{proc.stdout}")
+        logging.info(
+            f"Dry‑run: would apply Redis secret '{redis_secret_name}'. Manifest:\n{proc.stdout}"
+        )
     else:
         apply_proc = subprocess.run(
-            ["kubectl", "apply", "-f", "-"],
-            input=proc.stdout, text=True
+            ["kubectl", "apply", "-f", "-"], input=proc.stdout, text=True
         )
         if apply_proc.returncode != 0:
             logging.error("Failed to apply Redis secret")
             raise RuntimeError("Failed to apply Redis secret")
-        logging.info(f"Redis secret '{redis_secret_name}' created/updated in {ns['managed-it']} namespace.")
+        logging.info(
+            f"Redis secret '{redis_secret_name}' created/updated in {ns['managed-it']} namespace."
+        )
 
     # Cross-namespace PostgreSQL secret for CISO Assistant.
     # CISO Assistant runs in the 'grc' namespace but needs to connect to
@@ -903,27 +1113,46 @@ def create_secrets(cfg: dict):
     # namespace-scoped, so we create the same PostgreSQL secret in the 'grc'
     # namespace as well.
     proc = subprocess.run(
-        ["kubectl", "-n", ns["grc"], "create", "secret", "generic",
-         pg_secret_name,
-         f"--from-literal=postgres-password={postgres_pw}",
-         f"--from-literal=password={postgres_pw}",
-         "--dry-run=client", "-o", "yaml"],
-        capture_output=True, text=True
+        [
+            "kubectl",
+            "-n",
+            ns["grc"],
+            "create",
+            "secret",
+            "generic",
+            pg_secret_name,
+            f"--from-literal=postgres-password={postgres_pw}",
+            f"--from-literal=password={postgres_pw}",
+            "--dry-run=client",
+            "-o",
+            "yaml",
+        ],
+        capture_output=True,
+        text=True,
     )
     if proc.returncode != 0:
-        logging.error(f"Failed to generate PostgreSQL secret for {ns['grc']} namespace: {proc.stderr}")
-        raise RuntimeError(f"Failed to create PostgreSQL secret for {ns['grc']} namespace")
+        logging.error(
+            f"Failed to generate PostgreSQL secret for {ns['grc']} namespace: {proc.stderr}"
+        )
+        raise RuntimeError(
+            f"Failed to create PostgreSQL secret for {ns['grc']} namespace"
+        )
     if dry_run:
-        logging.info(f"Dry‑run: would apply PostgreSQL secret in {ns['grc']} namespace. Manifest:\n{proc.stdout}")
+        logging.info(
+            f"Dry‑run: would apply PostgreSQL secret in {ns['grc']} namespace. Manifest:\n{proc.stdout}"
+        )
     else:
         apply_proc = subprocess.run(
-            ["kubectl", "apply", "-f", "-"],
-            input=proc.stdout, text=True
+            ["kubectl", "apply", "-f", "-"], input=proc.stdout, text=True
         )
         if apply_proc.returncode != 0:
             logging.error(f"Failed to apply PostgreSQL secret in {ns['grc']} namespace")
-            raise RuntimeError(f"Failed to apply PostgreSQL secret in {ns['grc']} namespace")
-        logging.info(f"PostgreSQL secret '{pg_secret_name}' created/updated in {ns['grc']} namespace (for CISO Assistant).")
+            raise RuntimeError(
+                f"Failed to apply PostgreSQL secret in {ns['grc']} namespace"
+            )
+        logging.info(
+            f"PostgreSQL secret '{pg_secret_name}' created/updated in {ns['grc']} namespace (for CISO Assistant)."
+        )
 
     # Django secret key for CISO Assistant.
     # The CISO Assistant Helm chart reads the Django secret from a Kubernetes
@@ -938,26 +1167,40 @@ def create_secrets(cfg: dict):
 
     ciso_secret_name = f"{prefix}-ciso-secret"
     proc = subprocess.run(
-        ["kubectl", "-n", ns["grc"], "create", "secret", "generic",
-         ciso_secret_name,
-         f"--from-literal=django-secret-key={django_secret}",
-         "--dry-run=client", "-o", "yaml"],
-        capture_output=True, text=True
+        [
+            "kubectl",
+            "-n",
+            ns["grc"],
+            "create",
+            "secret",
+            "generic",
+            ciso_secret_name,
+            f"--from-literal=django-secret-key={django_secret}",
+            "--dry-run=client",
+            "-o",
+            "yaml",
+        ],
+        capture_output=True,
+        text=True,
     )
     if proc.returncode != 0:
         logging.error(f"Failed to generate CISO Assistant Django secret: {proc.stderr}")
         raise RuntimeError("Failed to create CISO Assistant Django secret")
     if dry_run:
-        logging.info(f"Dry‑run: would apply CISO Assistant Django secret '{ciso_secret_name}'. Manifest:\n{proc.stdout}")
+        logging.info(
+            f"Dry‑run: would apply CISO Assistant Django secret '{ciso_secret_name}'. Manifest:\n{proc.stdout}"
+        )
     else:
         apply_proc = subprocess.run(
-            ["kubectl", "apply", "-f", "-"],
-            input=proc.stdout, text=True
+            ["kubectl", "apply", "-f", "-"], input=proc.stdout, text=True
         )
         if apply_proc.returncode != 0:
             logging.error("Failed to apply CISO Assistant Django secret")
             raise RuntimeError("Failed to apply CISO Assistant Django secret")
-        logging.info(f"CISO Assistant Django secret '{ciso_secret_name}' created/updated in {ns['grc']} namespace.")
+        logging.info(
+            f"CISO Assistant Django secret '{ciso_secret_name}' created/updated in {ns['grc']} namespace."
+        )
+
 
 def _create_database(pod_name, namespace, db_name, secret_name, secret_key):
     """Create a database in the PostgreSQL instance running in the cluster.
@@ -981,16 +1224,27 @@ def _create_database(pod_name, namespace, db_name, secret_name, secret_key):
     logging.info(f"Ensuring database '{db_name}' exists in PostgreSQL...")
     # Retrieve the password from the Kubernetes secret
     pw_result = subprocess.run(
-        ["kubectl", "get", "secret", secret_name,
-         "-n", namespace,
-         "-o", f"jsonpath={{.data.{secret_key}}}"],
-        capture_output=True, text=True
+        [
+            "kubectl",
+            "get",
+            "secret",
+            secret_name,
+            "-n",
+            namespace,
+            "-o",
+            f"jsonpath={{.data.{secret_key}}}",
+        ],
+        capture_output=True,
+        text=True,
     )
     if pw_result.returncode != 0:
-        logging.error(f"Failed to retrieve password from secret '{secret_name}': {pw_result.stderr}")
+        logging.error(
+            f"Failed to retrieve password from secret '{secret_name}': {pw_result.stderr}"
+        )
         raise RuntimeError(f"Failed to retrieve password from secret '{secret_name}'")
 
     import base64
+
     db_password = base64.b64decode(pw_result.stdout.strip()).decode()
 
     # Create the database (idempotent — IF NOT EXISTS).
@@ -999,9 +1253,23 @@ def _create_database(pod_name, namespace, db_name, secret_name, secret_key):
     # breaks identifiers that contain hyphens (e.g. "ciso-assistant").
     sql = f'CREATE DATABASE "{db_name}";\n'
     result = subprocess.run(
-        ["kubectl", "exec", "-i", pod_name, "-n", namespace, "--",
-         "env", f"PGPASSWORD={db_password}", "psql", "-U", "postgres"],
-        input=sql, capture_output=True, text=True
+        [
+            "kubectl",
+            "exec",
+            "-i",
+            pod_name,
+            "-n",
+            namespace,
+            "--",
+            "env",
+            f"PGPASSWORD={db_password}",
+            "psql",
+            "-U",
+            "postgres",
+        ],
+        input=sql,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         # Database may already exist — that's fine
@@ -1023,9 +1291,17 @@ def main():
     """
     # Argument parsing
     parser = argparse.ArgumentParser(description="Deploy MCaaS stack")
-    parser.add_argument("--dry-run", action="store_true", help="Run deployment in dry‑run mode (no changes applied)")
-    parser.add_argument("--client", metavar="NAME", default=None,
-                        help="Deploy a specific client configuration from clients/<NAME>/config.yaml")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run deployment in dry‑run mode (no changes applied)",
+    )
+    parser.add_argument(
+        "--client",
+        metavar="NAME",
+        default=None,
+        help="Deploy a specific client configuration from clients/<NAME>/config.yaml",
+    )
     args = parser.parse_args()
 
     # Set global flag for dry‑run mode
@@ -1044,12 +1320,15 @@ def main():
 
     try:
         logging.info(f"Starting MCaaS deployment on {PLATFORM}")
-        
+
         # Load environment variables
         load_env_file()
-        
+
         # Verify prerequisites
         check_prerequisites()
+
+        # Verify kubectl can authenticate to the cluster
+        check_kubectl_connectivity()
 
         # Create namespaces first (secrets are namespace-scoped, so namespaces must exist)
         logging.info("Applying namespaces and base manifests...")
@@ -1064,28 +1343,60 @@ def main():
         # Create required Kubernetes secrets (must happen BEFORE Helm installs)
         logging.info("Creating required Kubernetes secrets...")
         create_secrets(cfg)
-        
+
         logging.info("Adding and updating Helm repositories...")
-        run_command(["helm", "repo", "add", "bitnami", "https://charts.bitnami.com/bitnami"], check=False)
-        run_command(["helm", "repo", "add", "opensearch", "https://opensearch-project.github.io/helm-charts"], check=False)
+        run_command(
+            ["helm", "repo", "add", "bitnami", "https://charts.bitnami.com/bitnami"],
+            check=False,
+        )
+        run_command(
+            [
+                "helm",
+                "repo",
+                "add",
+                "opensearch",
+                "https://opensearch-project.github.io/helm-charts",
+            ],
+            check=False,
+        )
         run_command(["helm", "repo", "update"])
 
         logging.info("Deploying PostgreSQL...")
-        run_command([
-            "helm", "upgrade", "--install", f"{prefix}-postgresql", "bitnami/postgresql",
-            "--namespace", ns["managed-it"],
-            "--values", str(values_dir / "postgresql.yaml"),
-            "--wait", "--timeout", "5m"
-        ])
+        run_command(
+            [
+                "helm",
+                "upgrade",
+                "--install",
+                f"{prefix}-postgresql",
+                "bitnami/postgresql",
+                "--namespace",
+                ns["managed-it"],
+                "--values",
+                str(values_dir / "postgresql.yaml"),
+                "--wait",
+                "--timeout",
+                "5m",
+            ]
+        )
         wait_for_resource(ns["managed-it"], f"{prefix}-postgresql")
 
         logging.info("Deploying OpenSearch...")
-        run_command([
-            "helm", "upgrade", "--install", f"{prefix}-opensearch", "opensearch/opensearch",
-            "--namespace", ns["security-ops"],
-            "--values", str(values_dir / "opensearch.yaml"),
-            "--wait", "--timeout", "10m"
-        ])
+        run_command(
+            [
+                "helm",
+                "upgrade",
+                "--install",
+                f"{prefix}-opensearch",
+                "opensearch/opensearch",
+                "--namespace",
+                ns["security-ops"],
+                "--values",
+                str(values_dir / "opensearch.yaml"),
+                "--wait",
+                "--timeout",
+                "10m",
+            ]
+        )
         wait_for_resource(ns["security-ops"], f"{prefix}-opensearch")
 
         # Clone or prepare Wazuh repo
@@ -1093,52 +1404,136 @@ def main():
         wazuh_clone_result = clone_or_use_wazuh_repo(wazuh_dir)
         # If the clone failed, wazuh_clone_result is None; fall back to
         # the directory Path anyway so deploy_wazuh can attempt a remote URL.
-        effective_wazuh_dir = wazuh_clone_result if wazuh_clone_result is not None else wazuh_dir
-        
+        effective_wazuh_dir = (
+            wazuh_clone_result if wazuh_clone_result is not None else wazuh_dir
+        )
+
         # Deploy Wazuh
         deploy_wazuh(effective_wazuh_dir, cfg)
 
         logging.info("Waiting for Wazuh components to be ready...")
-        run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-manager", "-n", ns["wazuh"], "--timeout=10m"], check=False)
-        run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-indexer", "-n", ns["wazuh"], "--timeout=10m"], check=False)
-        run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-dashboard", "-n", ns["wazuh"], "--timeout=10m"], check=False)
+        run_command(
+            [
+                "kubectl",
+                "wait",
+                "--for=condition=ready",
+                "pod",
+                "-l",
+                "app=wazuh-manager",
+                "-n",
+                ns["wazuh"],
+                "--timeout=10m",
+            ],
+            check=False,
+        )
+        run_command(
+            [
+                "kubectl",
+                "wait",
+                "--for=condition=ready",
+                "pod",
+                "-l",
+                "app=wazuh-indexer",
+                "-n",
+                ns["wazuh"],
+                "--timeout=10m",
+            ],
+            check=False,
+        )
+        run_command(
+            [
+                "kubectl",
+                "wait",
+                "--for=condition=ready",
+                "pod",
+                "-l",
+                "app=wazuh-dashboard",
+                "-n",
+                ns["wazuh"],
+                "--timeout=10m",
+            ],
+            check=False,
+        )
 
         logging.info("Deploying Shuffle (OCI chart)...")
-        run_command([
-            "helm", "upgrade", "--install", f"{prefix}-shuffle", "oci://ghcr.io/shuffle/charts/shuffle",
-            "--namespace", ns["security-ops"],
-            "--values", str(values_dir / "shuffle.yaml"),
-            "--wait", "--timeout", "10m"
-        ])
+        run_command(
+            [
+                "helm",
+                "upgrade",
+                "--install",
+                f"{prefix}-shuffle",
+                "oci://ghcr.io/shuffle/charts/shuffle",
+                "--namespace",
+                ns["security-ops"],
+                "--values",
+                str(values_dir / "shuffle.yaml"),
+                "--wait",
+                "--timeout",
+                "10m",
+            ]
+        )
         wait_for_resource(ns["security-ops"], f"{prefix}-shuffle")
 
         # Create the zammad database in PostgreSQL before deploying.
         # Zammad's init job needs this database to exist when
         # zammadConfig.postgresql.enabled=false and an external DB is used.
         logging.info("Creating zammad database in PostgreSQL...")
-        _create_database(f"{prefix}-postgresql-0", ns["managed-it"], "zammad", f"{prefix}-postgresql-secret", "postgres-password")
+        _create_database(
+            f"{prefix}-postgresql-0",
+            ns["managed-it"],
+            "zammad",
+            f"{prefix}-postgresql-secret",
+            "postgres-password",
+        )
 
         logging.info("Deploying Zammad (OCI chart)...")
-        run_command([
-            "helm", "upgrade", "--install", f"{prefix}-zammad", "oci://ghcr.io/zammad/charts/zammad",
-            "--namespace", ns["managed-it"],
-            "--values", str(values_dir / "zammad.yaml"),
-            "--wait", "--timeout", "15m"
-        ])
+        run_command(
+            [
+                "helm",
+                "upgrade",
+                "--install",
+                f"{prefix}-zammad",
+                "oci://ghcr.io/zammad/charts/zammad",
+                "--namespace",
+                ns["managed-it"],
+                "--values",
+                str(values_dir / "zammad.yaml"),
+                "--wait",
+                "--timeout",
+                "15m",
+            ]
+        )
         wait_for_resource(ns["managed-it"], f"{prefix}-zammad-railsserver")
 
         # Create the ciso-assistant database in PostgreSQL before deploying.
         logging.info("Creating ciso-assistant database in PostgreSQL...")
-        _create_database(f"{prefix}-postgresql-0", ns["managed-it"], "ciso-assistant", f"{prefix}-postgresql-secret", "postgres-password")
+        _create_database(
+            f"{prefix}-postgresql-0",
+            ns["managed-it"],
+            "ciso-assistant",
+            f"{prefix}-postgresql-secret",
+            "postgres-password",
+        )
 
         logging.info("Deploying CISO Assistant (OCI chart)...")
-        run_command([
-            "helm", "upgrade", "--install", f"{prefix}-ciso", "oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant",
-            "--version", "0.11.4",
-            "--namespace", ns["grc"],
-            "--values", str(values_dir / "ciso-assistant.yaml"),
-            "--wait", "--timeout", "10m"
-        ])
+        run_command(
+            [
+                "helm",
+                "upgrade",
+                "--install",
+                f"{prefix}-ciso",
+                "oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant",
+                "--version",
+                "0.11.4",
+                "--namespace",
+                ns["grc"],
+                "--values",
+                str(values_dir / "ciso-assistant.yaml"),
+                "--wait",
+                "--timeout",
+                "10m",
+            ]
+        )
         wait_for_resource(ns["grc"], f"{prefix}-ciso")
 
         logging.info("Deployment complete!")
@@ -1148,6 +1543,7 @@ def main():
         sys.exit(1)
     finally:
         logging.info(f"Logs written to {log_file}")
+
 
 if __name__ == "__main__":
     main()
