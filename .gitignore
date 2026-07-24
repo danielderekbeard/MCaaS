@@ -2,6 +2,7 @@
 .kube
 .kubeconfig
 .kubeconfig-github.yaml
+KUBE_CONFIG_DATA.txt
 *.local
 *.log
 .tmp/
