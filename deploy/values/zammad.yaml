@@ -4,20 +4,17 @@ zammadConfig:
     host: "mcaas-postgresql-postgresql.managed-it.svc.cluster.local"
     port: 5432
     user: "postgres"
-    pass: ""  # Retrieved from externalDatabase passwordSecret below
+    pass: ""  # Password comes from secrets.postgresql existing secret
     db: "zammad"
   elasticsearch:
     enabled: false
 
-# External database connection (used by Zammad when zammadConfig.postgresql.enabled=false)
-externalDatabase:
-  host: "mcaas-postgresql-postgresql.managed-it.svc.cluster.local"
-  port: 5432
-  user: "postgres"
-  passwordSecret:
-    name: "mcaas-postgresql-secret"
-    key: "postgres-password"
-database: "zammad"
+# Use our existing PostgreSQL secret so init containers get the correct password
+secrets:
+  postgresql:
+    useExisting: true
+    secretName: "mcaas-postgresql-secret"
+    secretKey: "postgres-password"
 
 # Disable the Bitnami sub-charts (redundant with zammadConfig conditions, but explicit)
 postgresql:
