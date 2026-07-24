@@ -19,6 +19,7 @@ try {
         "zammad"           = "managed-it"
         "mcaas-shuffle"    = "security-ops"
         "mcaas-opensearch" = "security-ops"
+        "mcaas-wazuh"      = "security-ops"
         "mcaas-postgresql" = "managed-it"
     }
 
@@ -35,10 +36,7 @@ try {
 
     # --- Delete Manifest-Based Deployments (Wazuh) ---
     Log "Deleting Wazuh resources from manifests..."
-    if (-not (Test-Path "$env:TEMP\wazuh-kubernetes")) {
-        git clone --depth 1 https://github.com/wazuh/wazuh-kubernetes.git "$env:TEMP\wazuh-kubernetes"
-    }
-    kubectl delete -k "$env:TEMP\wazuh-kubernetes\envs\local-env" --ignore-not-found=$true
+    # This is now handled by the Helm uninstall loop above.
 
     # --- Delete Persistent Volume Claims ---
     Log "Deleting persistent volume claims..."

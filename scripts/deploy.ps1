@@ -34,6 +34,7 @@ try {
     helm repo add bitnami https://charts.bitnami.com/bitnami | Out-Null
     helm repo add opensearch https://opensearch-project.github.io/helm-charts | Out-Null
     helm repo add zammad https://zammad.github.io/zammad-helm | Out-Null
+    helm repo add wazuh https://wazuh.github.io/wazuh-kubernetes/ | Out-Null
     # Wazuh, Shuffle, and CISO-Assistant do not use traditional Helm repos.
     helm repo update | Out-Null
     
@@ -52,34 +53,14 @@ try {
       --values (Join-Path $scriptRoot '../deploy/values/opensearch.yaml') `
       --wait --timeout 5m
     
-    Log "Cloning Wazuh and Shuffle repositories..."
-    New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null    
-    $wazuhDir = Join-Path $tmpDir 'wazuh-kubernetes'
-    $shuffleDir = Join-Path $tmpDir 'shuffle'
-    if (-not (Test-Path -Path $wazuhDir)) { git clone --depth 1 https://github.com/wazuh/wazuh-kubernetes.git $wazuhDir }
-    if (-not (Test-Path -Path $shuffleDir)) { git clone --depth 1 https://github.com/shuffle/shuffle.git $shuffleDir }
-    
-    Log "Preparing Wazuh manifests for Windows..."
-    # The wazuh-kubernetes repo uses symlinks which don't work well on Windows.
-    # We must run their provided script to generate the certs and configs.
-    Push-Location -Path $wazuhDir
-    try {
-      # This script generates certificates and config files, replacing the broken symlinks.
-      if (Test-Path -Path './generate-local-env.ps1') {
-        & ./generate-local-env.ps1
-      } else {
-        Log "generate-local-env.ps1 not found in $wazuhDir; skipping generation step."
-        Log "If you need generated certs/configs, run the repository's preparation script manually."
-      }
-    } finally {
-      Pop-Location
-    }
-
-    Log "Deploying Wazuh from manifests..."
-    kubectl apply -k (Join-Path $wazuhDir 'envs/local-env')
+    Log "Deploying Wazuh..."
+    helm upgrade --install mcaas-wazuh wazuh/wazuh `
+      --namespace security-ops `
+      --values (Join-Path $scriptRoot '../deploy/values/wazuh.yaml') `
+      --wait --timeout 10m
     
     Log "Deploying Shuffle..."
-    helm upgrade --install mcaas-shuffle (Join-Path $shuffleDir 'deploy\helm\shuffle') `
+    helm upgrade --install mcaas-shuffle oci://ghcr.io/shuffle/charts/shuffle `
       --namespace security-ops `
       --values (Join-Path $scriptRoot '../deploy/values/shuffle.yaml') `
       --wait --timeout 5m
@@ -95,7 +76,7 @@ try {
     Wait-ForDeployment "managed-it" "zammad-zammad-web"
     
     Log "Deploying CISO Assistant..."
-    helm upgrade --install ciso-assistant oci://ghcr.io/intuitem/ca-helm-chart/ciso-assistant `
+    helm upgrade --install ciso-assistant oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant `
       --version 0.1.0 `
       --namespace grc `
       --values (Join-Path $scriptRoot '../deploy/values/ciso-assistant.yaml') `

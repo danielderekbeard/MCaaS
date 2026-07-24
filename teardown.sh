@@ -19,6 +19,7 @@ declare -A releases=(
     ["zammad"]="managed-it"
     ["mcaas-shuffle"]="security-ops"
     ["mcaas-opensearch"]="security-ops"
+    ["mcaas-wazuh"]="security-ops"
     ["mcaas-postgresql"]="managed-it"
 )
 
@@ -35,9 +36,7 @@ done
 
 # --- Delete Manifest-Based Deployments (Wazuh) ---
 log "Deleting Wazuh resources from manifests..."
-# Clone the repo to get the kustomization files for deletion
-[[ -d /tmp/wazuh-kubernetes ]] || git clone --depth 1 https://github.com/wazuh/wazuh-kubernetes.git /tmp/wazuh-kubernetes
-kubectl delete -k /tmp/wazuh-kubernetes/envs/local-env --ignore-not-found=true
+# This is now handled by the Helm uninstall loop above.
 
 # --- Delete Persistent Volume Claims ---
 log "Deleting persistent volume claims..."
