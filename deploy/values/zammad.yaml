@@ -1,26 +1,41 @@
 zammadConfig:
   postgresql:
     enabled: false
-    host: "mcaas-postgresql-postgresql.managed-it.svc.cluster.local"
+    host: "mcaas-postgresql.managed-it.svc.cluster.local"
     port: 5432
     user: "postgres"
     pass: ""  # Password comes from secrets.postgresql existing secret
     db: "zammad"
   elasticsearch:
     enabled: false
+  redis:
+    enabled: true
+    host: "mcaas-zammad-redis"
+    port: 6379
+    pass: "zammad"
 
-# Use our existing PostgreSQL secret so init containers get the correct password
+# Use our existing secrets for PostgreSQL and Redis
 secrets:
   postgresql:
     useExisting: true
     secretName: "mcaas-postgresql-secret"
     secretKey: "postgres-password"
+  redis:
+    useExisting: true
+    secretName: "mcaas-zammad-redis-pass"
+    secretKey: "redis-password"
 
 # Disable the Bitnami sub-charts (redundant with zammadConfig conditions, but explicit)
 postgresql:
   enabled: false
 elasticsearch:
   enabled: false
+
+# Configure the Bitnami Redis sub-chart to use our existing secret
+redis:
+  auth:
+    existingSecret: "mcaas-zammad-redis-pass"
+    existingSecretPasswordKey: "redis-password"
 
 # Enable Ingress to expose the Zammad UI externally
 ingress:
