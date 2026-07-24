@@ -1,0 +1,12 @@
+backend:
+  opensearch:
+    host: "mcaas-opensearch.security-ops.svc.cluster.local"
+    port: 9200
+    secret:
+      name: "mcaas-opensearch-secret"
+      key: "opensearch-password"
+orborus:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 10Gi

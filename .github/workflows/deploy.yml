@@ -1,0 +1,41 @@
+name: Deploy MCaaS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Clone required chart repositories
+        run: |
+          git clone --depth 1 https://github.com/shuffle/shuffle.git /tmp/shuffle
+          git clone --depth 1 https://github.com/wazuh/wazuh-kubernetes.git /tmp/wazuh-kubernetes
+
+      - name: Initialize Kubernetes secrets
+        run: bash ./scripts/init-secrets.sh
+        env:
+          MCAAS_POSTGRES_PASSWORD: ${{ secrets.MCAAS_POSTGRES_PASSWORD }}
+          MCAAS_OPENSEARCH_PASSWORD: ${{ secrets.MCAAS_OPENSEARCH_PASSWORD }}
+
+      - name: Deploy MCaaS stack
+        run: bash ./scripts/deploy.sh

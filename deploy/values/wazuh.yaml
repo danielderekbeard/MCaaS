@@ -1,0 +1,18 @@
+wazuh:
+  manager:
+    enabled: true
+  dashboard:
+    enabled: true
+  indexer:
+    enabled: false
+  external:
+    host: "mcaas-opensearch.security-ops.svc.cluster.local"
+    port: 9200
+    secret:
+      name: "mcaas-opensearch-secret"
+      key: "opensearch-password"
+  certsGenerator:
+    image:
+      registry: "docker.io"
+      repository: "bitnami/kubectl"
+      tag: "1.28.4"

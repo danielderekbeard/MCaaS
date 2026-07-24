@@ -1,0 +1,11 @@
+global:
+  postgresql:
+    auth:
+      existingSecret: "mcaas-postgresql-secret"
+      secretKeys:
+        postgresPasswordKey: "postgres-password"
+database: "mcaas_db"
+primary:
+  persistence:
+    enabled: true
+    size: 10Gi

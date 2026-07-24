@@ -1,0 +1,54 @@
+# fleet.yaml - Rancher GitOps Manifest
+# This file instructs Rancher's Fleet to deploy the MCaaS stack from this repository.
+
+defaultNamespace: default
+
+# Target all clusters managed by this Rancher instance.
+# You can use cluster selectors to target specific clusters.
+targetCustomizations:
+- name: default
+  clusterSelector: {}
+  helm:
+    # Define the Helm repositories needed for the charts
+    repos:
+    - name: bitnami
+      repo: https://charts.bitnami.com/bitnami
+    - name: opensearch
+      repo: https://opensearch-project.github.io/helm-charts
+    - name: zammad
+      repo: https://zammad.github.io/zammad-helm
+    # Note: Wazuh and Shuffle are now deployed via local charts/manifests cloned from Git.
+    # They cannot be managed as Helm releases in this Fleet configuration and must be deployed
+    # via the scripts/deploy.sh or a CI/CD pipeline that can clone the repositories.
+
+  # Define the Helm releases to be deployed
+  releases:
+  - name: mcaas-postgresql
+    chart: bitnami/postgresql
+    namespace: managed-it
+    valuesFiles:
+    - deploy/values/postgresql.yaml
+  - name: mcaas-opensearch
+    chart: opensearch/opensearch
+    namespace: security-ops
+    valuesFiles:
+    - deploy/values/opensearch.yaml
+  - name: zammad
+    chart: zammad/zammad
+    namespace: managed-it
+    valuesFiles:
+    - deploy/values/zammad.yaml
+    dependsOn: # Ensure PostgreSQL is ready before deploying Zammad
+    - name: mcaas-postgresql
+  - name: ciso-assistant
+    chart: oci://ghcr.io/intuitem/ca-helm-chart/ciso-assistant
+    version: 0.1.0 # Pinning version for OCI chart
+    namespace: grc
+    valuesFiles:
+    - deploy/values/ciso-assistant.yaml
+    dependsOn:
+    - name: mcaas-postgresql
+
+kustomizations:
+- name: namespaces
+  dir: deploy

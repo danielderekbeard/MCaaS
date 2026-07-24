@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: security-ops
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: managed-it
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: grc

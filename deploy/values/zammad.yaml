@@ -1,0 +1,22 @@
+postgresql:
+  enabled: false
+externalDatabase:
+  host: "mcaas-postgresql-postgresql.managed-it.svc.cluster.local"
+  port: 5432
+  user: "postgres"
+  passwordSecret:
+    name: "mcaas-postgresql-secret"
+    key: "postgres-password"
+database: "zammad"
+elasticsearch:
+  enabled: false
+
+# Enable Ingress to expose the Zammad UI externally
+ingress:
+  enabled: true
+  className: "nginx" # Specify your ingress controller class
+  hosts:
+    - host: zammad.mcaas.example.com # Replace with your desired domain
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
