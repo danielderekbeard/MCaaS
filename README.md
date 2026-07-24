@@ -31,8 +31,8 @@ This workspace contains a repeatable deployment automation scaffold for the MCaa
    - Linux/macOS: `scripts/test-services.sh`
    - Windows PowerShell: `.\scripts\test-services.ps1`
 5. Teardown when needed:
-   - Linux/macOS: `scripts/teardown.sh`
-   - Windows PowerShell: `.\scripts\teardown.ps1` (or run the Python script: `python teardown.py`)
+   - Linux/macOS: `bash scripts/teardown.sh`
+   - Windows PowerShell: `.\scripts\teardown.ps1`
 
 ## Secrets
 

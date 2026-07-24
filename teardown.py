@@ -70,6 +70,20 @@ def main():
             else:
                 logging.info(f"Helm release '{release}' not found, skipping.")
 
+        logging.info("Deleting Wazuh resources from manifests...")
+        wazuh_repo_path = TMP_DIR / "wazuh-kubernetes"
+        if not wazuh_repo_path.exists():
+            run_command([
+                "git", "clone", "--depth", "1",
+                "https://github.com/wazuh/wazuh-kubernetes.git",
+                str(wazuh_repo_path)
+            ])
+        else:
+            logging.info("Wazuh repository already cloned, skipping download.")
+
+        wazuh_kustomize_path = wazuh_repo_path / "envs/local-env"
+        run_command(["kubectl", "delete", "-k", str(wazuh_kustomize_path), "--ignore-not-found=true"])
+
         logging.info("Cleaning up cloned repositories...")
         if TMP_DIR.exists():
             shutil.rmtree(TMP_DIR)

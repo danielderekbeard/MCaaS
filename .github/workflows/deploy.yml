@@ -15,6 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up kubeconfig
+        shell: bash
         run: |
           mkdir -p $HOME/.kube
           echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > $HOME/.kube/config
