@@ -584,6 +584,18 @@ def deploy_wazuh(wazuh_dir):
                 logging.warning("Local Wazuh clone is incomplete or missing; falling back to remote manifests")
                 kustomize_path = remote_kustomize
 
+    # Delete the wazuh-storage StorageClass BEFORE applying kustomize.
+    # The upstream local-env overlay creates a StorageClass with the
+    # microk8s.io/hostpath provisioner which does not exist on k3s, and
+    # the provisioner field is immutable — kustomize apply will fail if an
+    # existing StorageClass has a different (immutable) provisioner.
+    # Pre-deleting ensures the apply succeeds and lets us replace it after.
+    logging.info("Pre-deleting wazuh-storage StorageClass (immutable fields)...")
+    run_command([
+        "kubectl", "delete", "storageclass", "wazuh-storage",
+        "--ignore-not-found"
+    ], check=False)
+
     # Execute the apply command.
     run_command(["kubectl", "apply", "-k", kustomize_path])
 

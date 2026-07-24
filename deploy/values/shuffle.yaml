@@ -1,11 +1,16 @@
 fullnameOverride: shuffle
+
+# Disable the chart's built-in OpenSearch since we use our standalone instance
+opensearch:
+  enabled: false
+
 backend:
-  opensearch:
-    host: "mcaas-opensearch.security-ops.svc.cluster.local"
-    port: 9200
-    secret:
-      name: "mcaas-opensearch-secret"
-      key: "opensearch-password"
+  openSearch:
+    url: "http://mcaas-opensearch.security-ops.svc.cluster.local:9200"
+    username: admin
+    skipSSLVerify: true
+  extraEnvVarsSecret: mcaas-opensearch-secret
+
 orborus:
   enabled: true
   persistence:
