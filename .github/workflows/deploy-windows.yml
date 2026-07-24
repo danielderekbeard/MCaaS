@@ -22,12 +22,6 @@ jobs:
           }
           [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.KUBE_CONFIG_DATA }}")) | Set-Content -Path "$kubeDir\config"
 
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
-
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
-
       - name: Initialize Kubernetes secrets
         run: ./scripts/init-secrets.ps1
         env:

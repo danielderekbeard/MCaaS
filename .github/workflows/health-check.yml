@@ -18,8 +18,5 @@ jobs:
           echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
 
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
-
       - name: Check Kubernetes cluster connectivity
         run: kubectl cluster-info
