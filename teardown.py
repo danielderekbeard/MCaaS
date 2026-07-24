@@ -143,8 +143,32 @@ logging.basicConfig(
 )
 
 
+def _add_tls_skip(command):
+    """Add --insecure-skip-tls-verify to kubectl/helm commands for self-signed clusters.
+
+    This is a safety net alongside kubeconfig patching.  The CI workflows replace
+    certificate-authority-data with insecure-skip-tls-verify: true in the kubeconfig,
+    but some environments or tool versions may not fully honour that setting.  Passing
+    the flag explicitly ensures we can always reach the local k3s / Rancher Desktop
+    cluster whose API server uses a self-signed certificate.
+    """
+    if (
+        isinstance(command, list)
+        and len(command) >= 1
+        and command[0] in ("kubectl", "helm")
+    ):
+        # Don't add the flag twice.
+        if "--insecure-skip-tls-verify" not in command:
+            command = command + ["--insecure-skip-tls-verify"]
+    return command
+
+
 def run_command(command, check=True, shell=False, cwd=None):
     """Run a command and log its output.
+
+    For kubectl/helm commands the ``--insecure-skip-tls-verify`` flag is injected
+    automatically so that self-signed clusters are always reachable, even when the
+    kubeconfig patching is incomplete or ignored by the tool.
 
     Args:
         command: List of command arguments (preferred) or string if shell=True.
@@ -152,6 +176,7 @@ def run_command(command, check=True, shell=False, cwd=None):
         shell: Run command through shell.
         cwd: Working directory for the command.
     """
+    command = _add_tls_skip(command)
     cmd_str = " ".join(command) if isinstance(command, list) else command
     logging.info(f"Running: {cmd_str}")
 
@@ -178,6 +203,22 @@ def run_command(command, check=True, shell=False, cwd=None):
         raise
 
 
+def verify_cluster_connectivity():
+    """Verify that kubectl can reach the cluster before proceeding with teardown.
+
+    Exits with an error if the cluster is unreachable, which avoids cascading
+    failures from helm/kubectl commands that all fail for the same reason.
+    """
+    logging.info("Verifying cluster connectivity...")
+    result = run_command(["kubectl", "cluster-info"], check=False)
+    if result.returncode != 0:
+        logging.error("Cluster is unreachable. Please verify your kubeconfig.")
+        logging.error("STDOUT: %s", result.stdout)
+        logging.error("STDERR: %s", result.stderr)
+        sys.exit(1)
+    logging.info("Cluster connectivity verified.")
+
+
 def helm_release_exists(release_name, namespace):
     """Check if a Helm release exists in the given namespace."""
     result = run_command(
@@ -187,7 +228,13 @@ def helm_release_exists(release_name, namespace):
 
 
 def uninstall_helm_releases(cfg):
-    """Uninstall all Helm releases in reverse deployment order."""
+    """Uninstall all Helm releases in reverse deployment order.
+
+    Each release is checked first with ``helm status``; if the release does not
+    exist it is skipped.  Failures to uninstall an existing release are logged
+    but do **not** abort the teardown so that remaining resources can still be
+    cleaned up.
+    """
     prefix = cfg["prefix"]
     ns = cfg["namespaces"]
     # Releases listed in reverse deployment order
@@ -199,17 +246,33 @@ def uninstall_helm_releases(cfg):
         (f"{prefix}-postgresql", ns["managed-it"]),
     ]
 
+    errors = []
     for release_name, namespace in releases:
         logging.info(
             f"Uninstalling Helm release '{release_name}' from namespace '{namespace}'..."
         )
         if helm_release_exists(release_name, namespace):
-            run_command(["helm", "uninstall", release_name, "--namespace", namespace])
-            logging.info(f"Helm release '{release_name}' uninstalled.")
+            result = run_command(
+                ["helm", "uninstall", release_name, "--namespace", namespace],
+                check=False,
+            )
+            if result.returncode == 0:
+                logging.info(f"Helm release '{release_name}' uninstalled.")
+            else:
+                logging.warning(
+                    f"Failed to uninstall Helm release '{release_name}' "
+                    f"(exit code {result.returncode}). Continuing..."
+                )
+                errors.append(f"helm uninstall {release_name}")
         else:
             logging.info(
                 f"Helm release '{release_name}' not found in namespace '{namespace}', skipping."
             )
+
+    if errors:
+        logging.warning(
+            f"The following Helm releases could not be uninstalled: {', '.join(errors)}"
+        )
 
 
 def delete_wazuh_resources(cfg):
