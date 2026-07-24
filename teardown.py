@@ -22,6 +22,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 import argparse
+import yaml
 
 # --- Configuration ---
 SCRIPT_ROOT = Path(__file__).parent.resolve()

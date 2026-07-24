@@ -1016,14 +1016,31 @@ def _create_database(pod_name, namespace, db_name, secret_name, secret_key):
 def main():
     """Main deployment logic.
 
-    Parses command‑line arguments to configure the script (e.g. ``--dry-run``).
+    Parses command‑line arguments to configure the script (e.g. ``--dry-run``,
+    ``--client``). When ``--client`` is provided, the deployment uses a
+    client‑specific configuration loaded from ``clients/<name>/config.yaml``,
+    enabling isolated multi‑tenant deployments on the same cluster.
     """
     # Argument parsing
     parser = argparse.ArgumentParser(description="Deploy MCaaS stack")
     parser.add_argument("--dry-run", action="store_true", help="Run deployment in dry‑run mode (no changes applied)")
+    parser.add_argument("--client", metavar="NAME", default=None,
+                        help="Deploy a specific client configuration from clients/<NAME>/config.yaml")
     args = parser.parse_args()
+
     # Set global flag for dry‑run mode
     globals()["DRY_RUN"] = args.dry_run
+
+    # Load client configuration (DEFAULT_CONFIG when --client is omitted)
+    cfg = load_client_config(args.client)
+    prefix = cfg["prefix"]
+    ns = cfg["namespaces"]
+    values_dir = cfg["values_dir"]
+
+    if cfg["client_name"]:
+        logging.info(f"Deploying client '{cfg['client_name']}' with prefix '{prefix}'")
+    else:
+        logging.info("Deploying default MCaaS configuration")
 
     try:
         logging.info(f"Starting MCaaS deployment on {PLATFORM}")
@@ -1033,14 +1050,20 @@ def main():
         
         # Verify prerequisites
         check_prerequisites()
-        
+
         # Create namespaces first (secrets are namespace-scoped, so namespaces must exist)
         logging.info("Applying namespaces and base manifests...")
-        run_command(["kubectl", "apply", "-k", str(PROJECT_ROOT / "deploy")])
+        if cfg["client_dir"] is not None:
+            # Client-specific deployment — use the client's namespaces.yaml
+            client_ns_file = cfg["client_dir"] / "namespaces.yaml"
+            run_command(["kubectl", "apply", "-f", str(client_ns_file)])
+        else:
+            # Default deployment — use the base kustomize directory
+            run_command(["kubectl", "apply", "-k", str(PROJECT_ROOT / "deploy")])
 
         # Create required Kubernetes secrets (must happen BEFORE Helm installs)
         logging.info("Creating required Kubernetes secrets...")
-        create_secrets()
+        create_secrets(cfg)
         
         logging.info("Adding and updating Helm repositories...")
         run_command(["helm", "repo", "add", "bitnami", "https://charts.bitnami.com/bitnami"], check=False)
@@ -1049,21 +1072,21 @@ def main():
 
         logging.info("Deploying PostgreSQL...")
         run_command([
-            "helm", "upgrade", "--install", "mcaas-postgresql", "bitnami/postgresql",
-            "--namespace", "managed-it",
-            "--values", str(PROJECT_ROOT / "deploy" / "values" / "postgresql.yaml"),
+            "helm", "upgrade", "--install", f"{prefix}-postgresql", "bitnami/postgresql",
+            "--namespace", ns["managed-it"],
+            "--values", str(values_dir / "postgresql.yaml"),
             "--wait", "--timeout", "5m"
         ])
-        wait_for_resource("managed-it", "mcaas-postgresql")
+        wait_for_resource(ns["managed-it"], f"{prefix}-postgresql")
 
         logging.info("Deploying OpenSearch...")
         run_command([
-            "helm", "upgrade", "--install", "mcaas-opensearch", "opensearch/opensearch",
-            "--namespace", "security-ops",
-            "--values", str(PROJECT_ROOT / "deploy" / "values" / "opensearch.yaml"),
+            "helm", "upgrade", "--install", f"{prefix}-opensearch", "opensearch/opensearch",
+            "--namespace", ns["security-ops"],
+            "--values", str(values_dir / "opensearch.yaml"),
             "--wait", "--timeout", "10m"
         ])
-        wait_for_resource("security-ops", "mcaas-opensearch")
+        wait_for_resource(ns["security-ops"], f"{prefix}-opensearch")
 
         # Clone or prepare Wazuh repo
         wazuh_dir = TMP_DIR / "wazuh-kubernetes"
@@ -1073,50 +1096,50 @@ def main():
         effective_wazuh_dir = wazuh_clone_result if wazuh_clone_result is not None else wazuh_dir
         
         # Deploy Wazuh
-        deploy_wazuh(effective_wazuh_dir)
+        deploy_wazuh(effective_wazuh_dir, cfg)
 
         logging.info("Waiting for Wazuh components to be ready...")
-        run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-manager", "-n", "wazuh", "--timeout=10m"], check=False)
-        run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-indexer", "-n", "wazuh", "--timeout=10m"], check=False)
-        run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-dashboard", "-n", "wazuh", "--timeout=10m"], check=False)
+        run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-manager", "-n", ns["wazuh"], "--timeout=10m"], check=False)
+        run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-indexer", "-n", ns["wazuh"], "--timeout=10m"], check=False)
+        run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-dashboard", "-n", ns["wazuh"], "--timeout=10m"], check=False)
 
         logging.info("Deploying Shuffle (OCI chart)...")
         run_command([
-            "helm", "upgrade", "--install", "mcaas-shuffle", "oci://ghcr.io/shuffle/charts/shuffle",
-            "--namespace", "security-ops",
-            "--values", str(PROJECT_ROOT / "deploy" / "values" / "shuffle.yaml"),
+            "helm", "upgrade", "--install", f"{prefix}-shuffle", "oci://ghcr.io/shuffle/charts/shuffle",
+            "--namespace", ns["security-ops"],
+            "--values", str(values_dir / "shuffle.yaml"),
             "--wait", "--timeout", "10m"
         ])
-        wait_for_resource("security-ops", "mcaas-shuffle")
+        wait_for_resource(ns["security-ops"], f"{prefix}-shuffle")
 
         # Create the zammad database in PostgreSQL before deploying.
         # Zammad's init job needs this database to exist when
         # zammadConfig.postgresql.enabled=false and an external DB is used.
         logging.info("Creating zammad database in PostgreSQL...")
-        _create_database("mcaas-postgresql-0", "managed-it", "zammad", "mcaas-postgresql-secret", "postgres-password")
+        _create_database(f"{prefix}-postgresql-0", ns["managed-it"], "zammad", f"{prefix}-postgresql-secret", "postgres-password")
 
         logging.info("Deploying Zammad (OCI chart)...")
         run_command([
-            "helm", "upgrade", "--install", "mcaas-zammad", "oci://ghcr.io/zammad/charts/zammad",
-            "--namespace", "managed-it",
-            "--values", str(PROJECT_ROOT / "deploy" / "values" / "zammad.yaml"),
+            "helm", "upgrade", "--install", f"{prefix}-zammad", "oci://ghcr.io/zammad/charts/zammad",
+            "--namespace", ns["managed-it"],
+            "--values", str(values_dir / "zammad.yaml"),
             "--wait", "--timeout", "15m"
         ])
-        wait_for_resource("managed-it", "mcaas-zammad-railsserver")
+        wait_for_resource(ns["managed-it"], f"{prefix}-zammad-railsserver")
 
         # Create the ciso-assistant database in PostgreSQL before deploying.
         logging.info("Creating ciso-assistant database in PostgreSQL...")
-        _create_database("mcaas-postgresql-0", "managed-it", "ciso-assistant", "mcaas-postgresql-secret", "postgres-password")
+        _create_database(f"{prefix}-postgresql-0", ns["managed-it"], "ciso-assistant", f"{prefix}-postgresql-secret", "postgres-password")
 
         logging.info("Deploying CISO Assistant (OCI chart)...")
         run_command([
-            "helm", "upgrade", "--install", "mcaas-ciso", "oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant",
+            "helm", "upgrade", "--install", f"{prefix}-ciso", "oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant",
             "--version", "0.11.4",
-            "--namespace", "grc",
-            "--values", str(PROJECT_ROOT / "deploy" / "values" / "ciso-assistant.yaml"),
+            "--namespace", ns["grc"],
+            "--values", str(values_dir / "ciso-assistant.yaml"),
             "--wait", "--timeout", "10m"
         ])
-        wait_for_resource("grc", "mcaas-ciso")
+        wait_for_resource(ns["grc"], f"{prefix}-ciso")
 
         logging.info("Deployment complete!")
 
