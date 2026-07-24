@@ -93,6 +93,7 @@ python3 scripts/check-prerequisites.py
 2. Edit `.env` and set:
    - `MCAAS_POSTGRES_PASSWORD`: Strong password for PostgreSQL
    - `MCAAS_OPENSEARCH_PASSWORD`: Strong password for OpenSearch
+   - `MCAAS_REDIS_PASSWORD`: Redis auth password for Zammad (defaults to `zammad` if not set)
 
 ### Deploy
 
@@ -133,12 +134,17 @@ Get-ChildItem logs/ | Sort-Object LastWriteTime -Descending | Select-Object -Fir
 
 ## Secrets
 
-The deployment uses two Kubernetes secrets:
+The deployment uses the following Kubernetes secrets:
 
-- `mcaas-postgresql-secret` with key `postgres-password`
-- `mcaas-opensearch-secret` with key `opensearch-password`
+| Secret | Namespace | Keys | Purpose |
+|--------|-----------|------|---------|
+| `mcaas-postgresql-secret` | `managed-it`, `grc` | `postgres-password`, `password` | PostgreSQL auth (Bitnami key + CISO Assistant key) |
+| `mcaas-opensearch-secret` | `security-ops` | `opensearch-password`, `SHUFFLE_OPENSEARCH_PASSWORD` | OpenSearch auth (chart key + Shuffle env var) |
+| `mcaas-zammad-redis-pass` | `managed-it` | `redis-password` | Redis auth for Zammad |
 
-The `init-secrets` scripts create these secrets in the correct namespaces. When using `deploy.py`, secrets are created automatically via kubectl commands embedded in the script.
+The PostgreSQL secret is created in both the `managed-it` and `grc` namespaces because CISO Assistant (in `grc`) needs cross-namespace access to the PostgreSQL credentials.
+
+When using `deploy.py`, secrets are created automatically via kubectl commands embedded in the script. Passwords are sourced from environment variables (`MCAAS_POSTGRES_PASSWORD`, `MCAAS_OPENSEARCH_PASSWORD`, `MCAAS_REDIS_PASSWORD`) or auto-generated and persisted to `.env`.
 
 ## CI / GitHub Actions
 
@@ -150,6 +156,7 @@ The workflow uses the following repository secrets:
 - `KUBE_CONFIG_DATA` (base64-encoded kubeconfig)
 - `MCAAS_POSTGRES_PASSWORD`
 - `MCAAS_OPENSEARCH_PASSWORD`
+- `MCAAS_REDIS_PASSWORD` (optional; defaults to `zammad`)
 
 ## Windows Deployment Notes
 
@@ -235,9 +242,19 @@ $env:KUBECONFIG = "C:\path\to\kubeconfig"
 ## Notes
 
 - Chart repository URLs and release names are configured in `deploy.py`.
-- The `shuffle` chart is installed from OCI registry.
-- The `ciso-assistant` chart is installed from its OCI registry on GHCR.
+- The `shuffle` chart is installed from OCI registry (`oci://ghcr.io/shuffle/charts/shuffle`).
+- The `zammad` chart is installed from OCI registry (`oci://ghcr.io/zammad/charts/zammad`).
+- The `ciso-assistant` chart is installed from its OCI registry on GHCR (`oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant`), version `0.11.4`.
 - The `wazuh` deployment uses the official manifest-based installation from the `wazuh-kubernetes` GitHub repository.
 - The helm values in `deploy/values/` are derived from the infrastructure manifest definitions in `mcaas.md`.
 - On Windows, deployment logs are written to `logs/deploy-*.log` files in UTC timestamps.
+
+### Architecture Details
+
+- **PostgreSQL** is the shared database backend for Zammad and CISO Assistant, deployed once in `managed-it` namespace.
+- **Redis** is deployed as a Bitnami sub-chart of Zammad, providing in-memory caching for the helpdesk.
+- **OpenSearch** is the shared search/indexing backend for Wazuh and Shuffle, deployed once in `security-ops` namespace.
+- Database names use hyphens (e.g. `ciso-assistant`, not `ciso_assistant`) and are created by `deploy.py` before their respective Helm releases.
+- The PostgreSQL service is named `mcaas-postgresql` (not `mcaas-postgresql-postgresql`) — the Bitnami chart's `fullnameOverride` removes the chart-name suffix.
+- On Windows, `deploy.py` pipes SQL commands via stdin to `kubectl exec -i` instead of using psql's `-c` flag to avoid PowerShell stripping double-quotes around hyphenated identifiers.
 
