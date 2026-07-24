@@ -83,9 +83,19 @@ try {
     Log "Deleting Wazuh resources and namespace..."
     $wazuhEnv = Join-Path (Join-Path $scriptRoot '..') '.tmp\wazuh-kubernetes\envs\local-env'
     if (Test-Path $wazuhEnv) {
-        kubectl delete -k $wazuhEnv --ignore-not-found=$true --insecure-skip-tls-verify=true 2>$null
+        try {
+            kubectl delete -k $wazuhEnv --ignore-not-found=$true --insecure-skip-tls-verify=true 2>$null
+        } catch {
+            Log "Failed to delete Wazuh resources via kustomize at ${wazuhEnv}: $($_)"
+        }
+    } else {
+        Log "Wazuh environment path not found at $wazuhEnv, skipping kustomize delete."
     }
-    kubectl delete namespace wazuh --ignore-not-found=$true --insecure-skip-tls-verify=true 2>$null
+    try {
+        kubectl delete namespace wazuh --ignore-not-found=$true --insecure-skip-tls-verify=true 2>$null
+    } catch {
+        Log "Failed to delete Wazuh namespace: $_"
+    }
 
     # --- Delete Persistent Volume Claims ---
     Log "Deleting persistent volume claims..."

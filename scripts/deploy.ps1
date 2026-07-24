@@ -1,130 +1,181 @@
+<#
+.SYNOPSIS
+    MCaaS Deployment Script for Windows
+
+.DESCRIPTION
+    This script orchestrates the deployment of the MCaaS stack on Windows.
+    It validates prerequisites, loads environment variables, and delegates
+    to the Python deployment orchestrator for cross-platform consistency.
+
+.EXAMPLE
+    .\deploy.ps1
+#>
+
 param()
 
 $ErrorActionPreference = 'Stop'
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$envFile = Join-Path $scriptRoot '..\.env'
-$tmpDir = Join-Path (Join-Path $scriptRoot '..') '.tmp' # Use a local temp dir for clones
+$projectRoot = Split-Path -Parent $scriptRoot
+$envFile = Join-Path $projectRoot '.env'
+$deployer = Join-Path $projectRoot 'deploy.py'
+$logDir = Join-Path $projectRoot 'logs'
+$logFile = Join-Path $logDir ("deploy-{0}.log" -f (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmssZ"))
 
-function Set-KubeContextIfAvailable {
-    $kubeConfigPath = Join-Path $HOME '.kube\config'
-    if (-not (Test-Path $kubeConfigPath)) {
-        return
+# Ensure logs directory exists
+New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+# Logging function
+function Log-Message {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message,
+        [string]$Level = 'INFO'
+    )
+    $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    $logEntry = "[$timestamp] $Level: $Message"
+    Write-Host $logEntry
+    Add-Content -Path $logFile -Value $logEntry
+}
+
+# Error handler
+function Handle-Error {
+    param(
+        [string]$Message = "An error occurred"
+    )
+    Log-Message "❌ $Message" -Level 'ERROR'
+    Log-Message "For more details, check logs at: $logFile" -Level 'ERROR'
+    exit 1
+}
+
+# Prerequisite checker
+function Test-Prerequisites {
+    Log-Message "Checking prerequisites..."
+    
+    $missingTools = @()
+    
+    # Check Python 3
+    $python = Get-Command python.exe -ErrorAction SilentlyContinue
+    if (-not $python) {
+        $python = Get-Command python -ErrorAction SilentlyContinue
     }
-
-    $contexts = kubectl config get-contexts -o name --kubeconfig $kubeConfigPath 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        return
+    if (-not $python) {
+        $missingTools += "python"
     }
+    else {
+        Log-Message "✅ Python: $($python.Version)"
+    }
+    
+    # Check kubectl
+    $kubectl = Get-Command kubectl -ErrorAction SilentlyContinue
+    if (-not $kubectl) {
+        $missingTools += "kubectl"
+    }
+    else {
+        Log-Message "✅ kubectl: Found"
+    }
+    
+    # Check helm
+    $helm = Get-Command helm -ErrorAction SilentlyContinue
+    if (-not $helm) {
+        $missingTools += "helm"
+    }
+    else {
+        Log-Message "✅ helm: Found"
+    }
+    
+    # Check git
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if (-not $git) {
+        $missingTools += "git"
+    }
+    else {
+        Log-Message "✅ git: Found"
+    }
+    
+    if ($missingTools.Count -gt 0) {
+        Handle-Error "Missing required tools: $($missingTools -join ', ')"
+    }
+    
+    Log-Message "✅ All prerequisites present"
+}
 
-    foreach ($contextName in @('rancher-desktop', 'docker-desktop', 'mcaas-context')) {
-        if ($contexts -contains $contextName) {
-            kubectl config use-context $contextName --kubeconfig $kubeConfigPath | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                return
+# Load environment variables from .env file
+function Load-EnvironmentFile {
+    if (Test-Path $envFile) {
+        Log-Message "Loading environment from .env file"
+        Get-Content $envFile | ForEach-Object {
+            if ($_ -and -not $_.StartsWith('#')) {
+                $parts = $_ -split '=', 2
+                if ($parts.Count -eq 2) {
+                    $key = $parts[0].Trim()
+                    $value = $parts[1].Trim()
+                    [Environment]::SetEnvironmentVariable($key, $value, [EnvironmentVariableTarget]::Process)
+                    Log-Message "Loaded env: $key"
+                }
             }
         }
     }
+    else {
+        Log-Message "⚠️  No .env file found. Using existing environment variables."
+        Log-Message "Create a .env file or set environment variables manually."
+    }
 }
 
-function Set-KubeEnv {
+# Set up kubeconfig
+function Initialize-KubeEnvironment {
+    Log-Message "Initializing Kubernetes environment..."
+    
     $kubeConfigPath = Join-Path $HOME '.kube\config'
     if (Test-Path $kubeConfigPath) {
         $env:KUBECONFIG = $kubeConfigPath
+        Log-Message "✅ KUBECONFIG set to $kubeConfigPath"
     }
-
-    if (-not $env:KUBECONFIG) {
-        $env:KUBECONFIG = Join-Path $HOME '.kube\config'
-    }
-}
-
-Set-KubeEnv
-Set-KubeContextIfAvailable
-if (Test-Path $envFile) { Get-Content $envFile | ForEach-Object {
-    if ($_ -and -not $_.StartsWith('#')) {
-        $parts = $_ -split '=', 2
-        if ($parts.Count -ge 2) {
-            $key = $parts[0].Trim()
-            $value = $parts[1].Trim()
-            Set-Item -Path "Env:$key" -Value $value
+    
+    # Try to use a sensible default context if available
+    $contexts = kubectl config get-contexts -o name --kubeconfig $kubeConfigPath 2>$null | Where-Object { $_ }
+    
+    if ($contexts) {
+        foreach ($contextName in @('rancher-desktop', 'docker-desktop', 'mcaas-context')) {
+            if ($contexts -contains $contextName) {
+                Log-Message "Setting Kubernetes context to: $contextName"
+                kubectl config use-context $contextName --kubeconfig $kubeConfigPath | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    Log-Message "✅ Kubernetes context configured"
+                    return
+                }
+            }
         }
     }
-}}
-
-# Logging (PowerShell transcript)
-$LogDir = Join-Path $scriptRoot '..\logs'
-New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
-$LogFile = Join-Path $LogDir ("deploy-{0}.log" -f (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmssZ"))
-Start-Transcript -Path $LogFile -Force
-function Log([string]$msg) { $ts = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"); $line = "${ts} ${msg}"; Write-Host $line }
-
-# Helper function to wait for a deployment to be ready
-function Wait-ForDeployment([string]$namespace, [string]$deploymentName, [string]$timeout = "5m") {
-    Log "Waiting for deployment '$deploymentName' in namespace '$namespace' to be ready..."
-    kubectl wait --for=condition=available --namespace $namespace deployment/$deploymentName --timeout=$timeout
-    Log "Deployment '$deploymentName' is ready."
+    
+    Log-Message "⚠️  Could not auto-detect Kubernetes context"
+    Log-Message "Verify your kubeconfig is configured correctly before deployment"
 }
 
 try {
-    Log "Adding and updating Helm repositories..."
-    helm repo add bitnami https://charts.bitnami.com/bitnami | Out-Null
-    helm repo add opensearch https://opensearch-project.github.io/helm-charts | Out-Null
-    helm repo add zammad https://zammad.github.io/zammad-helm | Out-Null
-    helm repo add wazuh https://wazuh.github.io/wazuh-kubernetes/ | Out-Null
-    # Wazuh, Shuffle, and CISO-Assistant do not use traditional Helm repos.
-    helm repo update | Out-Null
+    Log-Message "========================================" 
+    Log-Message "MCaaS Deployment for Windows"
+    Log-Message "========================================" 
+    Log-Message "Starting deployment..."
     
-    Log "Applying namespaces and base manifests..."
-    kubectl apply -k (Join-Path $scriptRoot '../deploy')
+    Test-Prerequisites
+    Load-EnvironmentFile
+    Initialize-KubeEnvironment
     
-    Log "Deploying PostgreSQL..."
-    helm upgrade --install mcaas-postgresql bitnami/postgresql `
-      --namespace managed-it `
-      --values (Join-Path $scriptRoot '../deploy/values/postgresql.yaml') `
-      --wait --timeout 5m
+    Log-Message "Invoking Python deployment orchestrator..."
+    Log-Message "Command: python $deployer"
     
-    Log "Deploying OpenSearch..."
-    helm upgrade --install mcaas-opensearch opensearch/opensearch `
-      --namespace security-ops `
-      --values (Join-Path $scriptRoot '../deploy/values/opensearch.yaml') `
-      --wait --timeout 5m
+    # Call the Python deployment script
+    python $deployer
     
-    Log "Deploying Wazuh from manifests..."
-    $wazuhRepo = Join-Path $tmpDir 'wazuh-kubernetes'
-    if (-not (Test-Path $wazuhRepo)) {
-        git clone --depth 1 https://github.com/wazuh/wazuh-kubernetes.git $wazuhRepo
+    if ($LASTEXITCODE -ne 0) {
+        Handle-Error "Python deployment script exited with code $LASTEXITCODE"
     }
-    kubectl apply -k (Join-Path $wazuhRepo 'envs/local-env')
-    kubectl wait --for=condition=ready pod -l app=wazuh-manager -n security-ops --timeout=5m
-    kubectl wait --for=condition=ready pod -l app=wazuh-indexer -n security-ops --timeout=5m
-    kubectl wait --for=condition=ready pod -l app=wazuh-dashboard -n security-ops --timeout=5m
     
-    Log "Deploying Shuffle..."
-    helm upgrade --install mcaas-shuffle oci://ghcr.io/shuffle/charts/shuffle `
-      --namespace security-ops `
-      --values (Join-Path $scriptRoot '../deploy/values/shuffle.yaml') `
-      --wait --timeout 5m
-    Wait-ForDeployment "security-ops" "mcaas-shuffle"
-    
-    Log "Deploying Zammad..."
-    helm upgrade --install zammad zammad/zammad `
-      --namespace managed-it `
-      --values (Join-Path $scriptRoot '../deploy/values/zammad.yaml') `
-      --wait --timeout 5m
-    Wait-ForDeployment "managed-it" "zammad-zammad-scheduler"
-    Wait-ForDeployment "managed-it" "zammad-zammad-websocket"
-    Wait-ForDeployment "managed-it" "zammad-zammad-web"
-    
-    Log "Deploying CISO Assistant..."
-    helm upgrade --install ciso-assistant oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant `
-      --version 0.11.4 `
-      --namespace grc `
-      --values (Join-Path $scriptRoot '../deploy/values/ciso-assistant.yaml') `
-      --wait --timeout 5m
-    Wait-ForDeployment "grc" "ciso-assistant-frontend"
-    Wait-ForDeployment "grc" "ciso-assistant-backend"
-    
-    Log 'Deployment complete.'
-} finally {
-  Stop-Transcript | Out-Null
-  Write-Host "Logs written to $LogFile"
+    Log-Message "========================================" 
+    Log-Message "✅ Deployment completed successfully!"
+    Log-Message "========================================" 
+    Log-Message "Logs written to: $logFile"
+}
+catch {
+    Handle-Error $_.Exception.Message
 }
