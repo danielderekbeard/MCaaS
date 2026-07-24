@@ -43,7 +43,10 @@ jobs:
             New-Item -Path $kubeDir -ItemType Directory | Out-Null
           }
           $kubeConfigPath = "$kubeDir\config"
-          [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.KUBE_CONFIG_DATA }}")) | Set-Content -Path $kubeConfigPath
+          # Decode and write kubeconfig as UTF-8 WITHOUT BOM to avoid YAML parse failures.
+          # PowerShell Set-Content defaults to UTF-16LE on Windows which corrupts YAML.
+          $decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.KUBE_CONFIG_DATA }}"))
+          [System.IO.File]::WriteAllText($kubeConfigPath, $decoded, [System.Text.UTF8Encoding]::new($false))
 
           # Patch kubeconfig to skip TLS verification for local self-signed clusters.
           # The self-hosted runner connects to a local k3s/Rancher Desktop cluster
@@ -52,10 +55,14 @@ jobs:
           # "x509: certificate signed by unknown authority".
           # Replace certificate-authority-data / certificate-authority entries
           # with insecure-skip-tls-verify: true on all cluster definitions.
-          $yaml = Get-Content $kubeConfigPath -Raw
+          $yaml = [System.IO.File]::ReadAllText($kubeConfigPath)
           $yaml = $yaml -replace '(?m)^(\s*)certificate-authority-data:.*$', '$1insecure-skip-tls-verify: true'
           $yaml = $yaml -replace '(?m)^(\s*)certificate-authority:.*$', '$1insecure-skip-tls-verify: true'
-          $yaml | Set-Content $kubeConfigPath -NoNewline
+          [System.IO.File]::WriteAllText($kubeConfigPath, $yaml, [System.Text.UTF8Encoding]::new($false))
+
+          # Verify kubectl can connect before proceeding
+          kubectl cluster-info
+          kubectl auth can-i create namespaces
 
       - name: Deploy MCaaS stack
         run: |
