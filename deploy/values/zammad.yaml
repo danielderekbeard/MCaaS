@@ -1,5 +1,15 @@
-postgresql:
-  enabled: false
+zammadConfig:
+  postgresql:
+    enabled: false
+    host: "mcaas-postgresql-postgresql.managed-it.svc.cluster.local"
+    port: 5432
+    user: "postgres"
+    pass: ""  # Retrieved from externalDatabase passwordSecret below
+    db: "zammad"
+  elasticsearch:
+    enabled: false
+
+# External database connection (used by Zammad when zammadConfig.postgresql.enabled=false)
 externalDatabase:
   host: "mcaas-postgresql-postgresql.managed-it.svc.cluster.local"
   port: 5432
@@ -8,6 +18,10 @@ externalDatabase:
     name: "mcaas-postgresql-secret"
     key: "postgres-password"
 database: "zammad"
+
+# Disable the Bitnami sub-charts (redundant with zammadConfig conditions, but explicit)
+postgresql:
+  enabled: false
 elasticsearch:
   enabled: false
 
