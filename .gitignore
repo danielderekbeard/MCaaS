@@ -9,3 +9,6 @@ logs/
 **/node_modules
 **/__pycache__
 **/.pytest_cache
+
+# Session documentation output — not for commit
+docs/
