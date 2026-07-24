@@ -2,7 +2,7 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$envFile = Join-Path $scriptRoot '..\' '.env'
+$envFile = Join-Path $scriptRoot '..\.env'
 $tmpDir = Join-Path (Join-Path $scriptRoot '..') '.tmp' # Use a local temp dir for clones
 if (Test-Path $envFile) { Get-Content $envFile | ForEach-Object {
     if ($_ -and -not $_.StartsWith('#')) {
