@@ -1,3 +1,4 @@
+fullnameOverride: shuffle
 backend:
   opensearch:
     host: "mcaas-opensearch.security-ops.svc.cluster.local"

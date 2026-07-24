@@ -48,29 +48,34 @@ logging.basicConfig(
 def ensure_wazuh_certs(wazuh_dir: Path) -> None:
     """Generate self-signed TLS certificates required by the Wazuh kustomization.
 
-    The upstream Wazuh kustomization uses ``secretGenerator`` to create three
-    secrets (``indexer-certs``, ``dashboard-certs``, ``manager-certs``) from
-    PEM files under ``<repo>/wazuh/config/``. In a fresh clone those files are
-    not present, causing ``kubectl apply -k`` to fail.
+    The upstream Wazuh kustomization uses ``secretGenerator`` entries in
+    ``wazuh/kustomization.yml`` that reference PEM files under
+    ``<repo>/wazuh/certs/``.  In a fresh clone those files are not present,
+    causing ``kubectl apply -k`` to fail.
 
     This function generates a self-signed root CA and then signs leaf
-    certificates for the indexer, dashboard, and manager components. The
-    certificates are written to the paths expected by the kustomization so
-    that ``secretGenerator`` can embed them.
+    certificates for the indexer, dashboard, and manager components.  The
+    certificates are written to the exact paths expected by the
+    ``secretGenerator`` directives so that ``kubectl apply -k`` can embed
+    them as secrets.
+
+    The expected layout (derived from ``wazuh/kustomization.yml``) is:
+
+    * ``wazuh/certs/indexer_cluster/`` — root-ca, node, admin, dashboard,
+      filebeat PEMs
+    * ``wazuh/certs/dashboard_http/`` — cert, key PEMs (plus root-ca symlink)
 
     Requires ``openssl`` to be available on ``$PATH``.
     """
-    # --- Directory layout ---
-    indexer_certs = wazuh_dir / "wazuh" / "config" / "indexer" / "certs"
-    dashboard_certs = wazuh_dir / "wazuh" / "config" / "dashboard" / "certs"
-    manager_certs = wazuh_dir / "wazuh" / "config" / "manager" / "certs"
-    rootca_certs = wazuh_dir / "wazuh" / "config" / "root-ca" / "certs"
+    # --- Directory layout (must match kustomization.yml secretGenerator paths) ---
+    indexer_cluster = wazuh_dir / "wazuh" / "certs" / "indexer_cluster"
+    dashboard_http  = wazuh_dir / "wazuh" / "certs" / "dashboard_http"
 
-    for directory in (indexer_certs, dashboard_certs, manager_certs, rootca_certs):
+    for directory in (indexer_cluster, dashboard_http):
         directory.mkdir(parents=True, exist_ok=True)
 
-    root_ca_key = rootca_certs / "root-ca-key.pem"
-    root_ca_cert = rootca_certs / "root-ca.pem"
+    root_ca_key  = indexer_cluster / "root-ca-key.pem"
+    root_ca_cert = indexer_cluster / "root-ca.pem"
 
     # --- 1. Generate root CA (if not already present) ---
     if not root_ca_cert.exists() or not root_ca_key.exists():
@@ -113,43 +118,45 @@ def ensure_wazuh_certs(wazuh_dir: Path) -> None:
             "-days", "3650",
         ])
 
-    # --- 2. Indexer certificate ---
+    # --- 2. Indexer cluster certificates ---
+    # Node cert (CN=indexer)
     _sign_cert(
         "indexer", "indexer",
-        indexer_certs / "indexer-key.pem",
-        indexer_certs / "indexer.csr",
-        indexer_certs / "indexer.pem",
+        indexer_cluster / "node-key.pem",
+        indexer_cluster / "node.csr",
+        indexer_cluster / "node.pem",
     )
     # Admin client cert (used by the dashboard to authenticate to the indexer)
     _sign_cert(
         "admin", "admin",
-        indexer_certs / "admin-key.pem",
-        indexer_certs / "admin.csr",
-        indexer_certs / "admin.pem",
+        indexer_cluster / "admin-key.pem",
+        indexer_cluster / "admin.csr",
+        indexer_cluster / "admin.pem",
     )
-
-    # --- 3. Dashboard certificate ---
+    # Dashboard-to-indexer cert
     _sign_cert(
         "dashboard", "dashboard",
-        dashboard_certs / "dashboard-key.pem",
-        dashboard_certs / "dashboard.csr",
-        dashboard_certs / "dashboard.pem",
+        indexer_cluster / "dashboard-key.pem",
+        indexer_cluster / "dashboard.csr",
+        indexer_cluster / "dashboard.pem",
     )
-    # Copy root CA into dashboard certs (secretGenerator expects it here)
-    shutil.copy2(str(root_ca_cert), str(dashboard_certs / "root-ca.pem"))
-
-    # --- 4. Manager certificate ---
+    # Filebeat cert
     _sign_cert(
-        "manager", "manager",
-        manager_certs / "manager-key.pem",
-        manager_certs / "manager.csr",
-        manager_certs / "manager.pem",
+        "filebeat", "filebeat",
+        indexer_cluster / "filebeat-key.pem",
+        indexer_cluster / "filebeat.csr",
+        indexer_cluster / "filebeat.pem",
     )
-    # Copy root CA into manager certs
-    shutil.copy2(str(root_ca_cert), str(manager_certs / "root-ca.pem"))
 
-    # Copy root CA into indexer certs as well (secretGenerator expects it)
-    shutil.copy2(str(root_ca_cert), str(indexer_certs / "root-ca.pem"))
+    # --- 3. Dashboard HTTP certificate ---
+    _sign_cert(
+        "dashboard_http", "dashboard",
+        dashboard_http / "key.pem",
+        dashboard_http / "dashboard_http.csr",
+        dashboard_http / "cert.pem",
+    )
+    # Copy root CA into dashboard_http (secretGenerator expects it here)
+    shutil.copy2(str(root_ca_cert), str(dashboard_http / "root-ca.pem"))
 
     logging.info("Wazuh TLS certificates generated successfully.")
 
@@ -235,7 +242,7 @@ def check_prerequisites():
     
     logging.info("All prerequisites are available.")
 
-def run_command(command, check=True, shell=False, cwd=None):
+def run_command(command, check=True, shell=False, cwd=None, input_data=None):
     """Runs a command and logs its output.
 
     When ``DRY_RUN`` is enabled we add ``--dry-run=client`` to ``helm`` and
@@ -248,6 +255,7 @@ def run_command(command, check=True, shell=False, cwd=None):
         check: Raise exception if command fails
         shell: Run command through shell (generally not recommended)
         cwd: Working directory for the command
+        input_data: String data to pass to stdin (e.g. for kubectl apply -f -)
     """
     # Inject dry‑run flag for helm/kubectl when appropriate. For Helm we also
     # strip any "--wait" flag because waiting for a resource that will never be
@@ -275,7 +283,8 @@ def run_command(command, check=True, shell=False, cwd=None):
             text=True,
             capture_output=True,
             shell=shell,
-            cwd=cwd
+            cwd=cwd,
+            input=input_data
         )
         
         if result.stdout:
@@ -566,7 +575,7 @@ def deploy_wazuh(wazuh_dir):
             # POSIX: Prefer a local clone; if certs are missing, generate them.
             local_kustomize = wazuh_dir and (wazuh_dir / "envs" / "local-env")
             if local_kustomize and local_kustomize.exists():
-                required_cert = wazuh_dir / "wazuh" / "config" / "root-ca" / "certs" / "root-ca.pem"
+                required_cert = wazuh_dir / "wazuh" / "certs" / "indexer_cluster" / "root-ca.pem"
                 if not required_cert.exists():
                     logging.info("Wazuh TLS certificates not found – generating them now.")
                     ensure_wazuh_certs(wazuh_dir)
@@ -578,14 +587,28 @@ def deploy_wazuh(wazuh_dir):
     # Execute the apply command.
     run_command(["kubectl", "apply", "-k", kustomize_path])
 
-    # Patch the Wazuh StorageClass to use the k3s local-path provisioner.
-    # The upstream local-env overlay uses microk8s.io/hostpath which does not
-    # exist on k3s. Patching to rancher.io/local-path makes PVCs bind correctly.
-    logging.info("Patching wazuh-storage StorageClass for k3s compatibility...")
+    # Replace the Wazuh StorageClass for k3s compatibility.
+    # The upstream local-env overlay creates a StorageClass with
+    # microk8s.io/hostpath provisioner which does not exist on k3s.
+    # We must delete and recreate because the provisioner field is immutable.
+    # We also set WaitForFirstConsumer so the local-path provisioner knows
+    # which node to provision volumes on before binding PVCs.
+    logging.info("Replacing wazuh-storage StorageClass for k3s compatibility...")
     run_command([
-        "kubectl", "patch", "storageclass", "wazuh-storage",
-        "-p", '{"provisioner": "rancher.io/local-path"}'
+        "kubectl", "delete", "storageclass", "wazuh-storage",
+        "--ignore-not-found"
     ], check=False)
+    run_command([
+        "kubectl", "apply", "-f", "-"
+    ], input_data=(
+        "apiVersion: storage.k8s.io/v1\n"
+        "kind: StorageClass\n"
+        "metadata:\n"
+        "  name: wazuh-storage\n"
+        "provisioner: rancher.io/local-path\n"
+        "reclaimPolicy: Delete\n"
+        "volumeBindingMode: WaitForFirstConsumer\n"
+    ))
 
 def load_env_file():
     """Load environment variables from .env file if it exists."""
