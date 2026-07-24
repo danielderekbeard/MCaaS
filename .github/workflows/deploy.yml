@@ -1,9 +1,6 @@
 name: Deploy MCaaS
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch: {}
 
 jobs:

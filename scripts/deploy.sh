@@ -40,9 +40,8 @@ helm upgrade --install mcaas-opensearch opensearch/opensearch \
   --values "${SCRIPT_ROOT}/../deploy/values/opensearch.yaml" \
   --wait --timeout 5m
 
-log "Cloning Wazuh and Shuffle repositories..."
+log "Cloning Wazuh repository..."
 [[ -d /tmp/wazuh-kubernetes ]] || git clone --depth 1 https://github.com/wazuh/wazuh-kubernetes.git /tmp/wazuh-kubernetes
-[[ -d /tmp/shuffle ]] || git clone --depth 1 https://github.com/shuffle/shuffle.git /tmp/shuffle
 
 log "Deploying Wazuh from manifests..."
 kubectl apply -k /tmp/wazuh-kubernetes/envs/local-env
@@ -53,7 +52,7 @@ kubectl wait --for=condition=ready pod -l app=wazuh-indexer -n security-ops --ti
 kubectl wait --for=condition=ready pod -l app=wazuh-dashboard -n security-ops --timeout=5m
 
 log "Deploying Shuffle..."
-helm upgrade --install mcaas-shuffle /tmp/shuffle/deploy/helm/shuffle \
+helm upgrade --install mcaas-shuffle oci://ghcr.io/shuffle/charts/shuffle \
   --namespace security-ops \
   --values "${SCRIPT_ROOT}/../deploy/values/shuffle.yaml" \
   --wait --timeout 5m
@@ -69,8 +68,8 @@ wait_for_deployment "managed-it" "zammad-zammad-websocket"
 wait_for_deployment "managed-it" "zammad-zammad-web"
 
 log "Deploying CISO Assistant..."
-helm upgrade --install ciso-assistant oci://ghcr.io/intuitem/ca-helm-chart/ciso-assistant \
-  --version 0.1.0 \
+helm upgrade --install ciso-assistant oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant \
+  --version 0.11.4 \
   --namespace grc \
   --values "${SCRIPT_ROOT}/../deploy/values/ciso-assistant.yaml" \
   --wait --timeout 5m

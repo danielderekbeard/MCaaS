@@ -13,7 +13,7 @@ trap 'log "Script exited with status $?"' EXIT
 declare -A releases=(
     ["ciso-assistant"]="grc"
     ["zammad"]="managed-it"
-    ["wazuh"]="security-ops"
+    ["mcaas-wazuh"]="security-ops"
     ["mcaas-shuffle"]="security-ops"
     ["mcaas-opensearch"]="security-ops"
     ["mcaas-postgresql"]="managed-it"
@@ -29,14 +29,21 @@ for release in "${!releases[@]}"; do
     fi
 done
 
-log "Cleaning up cloned repositories..."
+log "Deleting Wazuh resources and namespace..."
 TMP_DIR="$(cd "${SCRIPT_ROOT}/.." && pwd)/.tmp"
+WAZUH_ENV="${TMP_DIR}/wazuh-kubernetes/envs/local-env"
+if [ -d "$WAZUH_ENV" ]; then
+    kubectl delete -k "$WAZUH_ENV" --ignore-not-found=true
+fi
+kubectl delete namespace wazuh --ignore-not-found=true
+
+log "Cleaning up cloned repositories..."
 mkdir -p "${TMP_DIR}"
 log "Cleaning up cloned repositories in ${TMP_DIR}..."
 rm -rf "${TMP_DIR}/wazuh-kubernetes" "${TMP_DIR}/shuffle"
 
 log "Deleting persistent volume claims..."
-kubectl delete pvc -n security-ops -l app.kubernetes.io/instance=mcaas-opensearch,app=wazuh-indexer --ignore-not-found=true
+kubectl delete pvc -n security-ops -l app.kubernetes.io/instance=mcaas-opensearch --ignore-not-found=true
 kubectl delete pvc -n managed-it -l app.kubernetes.io/instance=mcaas-postgresql --ignore-not-found=true
 
 kubectl delete -k "${SCRIPT_ROOT}/../deploy" --ignore-not-found=true

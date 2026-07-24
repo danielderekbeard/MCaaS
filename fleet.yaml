@@ -41,8 +41,8 @@ targetCustomizations:
     dependsOn: # Ensure PostgreSQL is ready before deploying Zammad
     - name: mcaas-postgresql
   - name: ciso-assistant
-    chart: oci://ghcr.io/intuitem/ca-helm-chart/ciso-assistant
-    version: 0.1.0 # Pinning version for OCI chart
+    chart: oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant
+    version: 0.11.4 # Pinning version for OCI chart
     namespace: grc
     valuesFiles:
     - deploy/values/ciso-assistant.yaml

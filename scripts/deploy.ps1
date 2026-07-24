@@ -4,6 +4,41 @@ $ErrorActionPreference = 'Stop'
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $envFile = Join-Path $scriptRoot '..\.env'
 $tmpDir = Join-Path (Join-Path $scriptRoot '..') '.tmp' # Use a local temp dir for clones
+
+function Set-KubeContextIfAvailable {
+    $kubeConfigPath = Join-Path $HOME '.kube\config'
+    if (-not (Test-Path $kubeConfigPath)) {
+        return
+    }
+
+    $contexts = kubectl config get-contexts -o name --kubeconfig $kubeConfigPath 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return
+    }
+
+    foreach ($contextName in @('rancher-desktop', 'docker-desktop', 'mcaas-context')) {
+        if ($contexts -contains $contextName) {
+            kubectl config use-context $contextName --kubeconfig $kubeConfigPath | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                return
+            }
+        }
+    }
+}
+
+function Set-KubeEnv {
+    $kubeConfigPath = Join-Path $HOME '.kube\config'
+    if (Test-Path $kubeConfigPath) {
+        $env:KUBECONFIG = $kubeConfigPath
+    }
+
+    if (-not $env:KUBECONFIG) {
+        $env:KUBECONFIG = Join-Path $HOME '.kube\config'
+    }
+}
+
+Set-KubeEnv
+Set-KubeContextIfAvailable
 if (Test-Path $envFile) { Get-Content $envFile | ForEach-Object {
     if ($_ -and -not $_.StartsWith('#')) {
         $parts = $_ -split '=', 2
@@ -53,11 +88,15 @@ try {
       --values (Join-Path $scriptRoot '../deploy/values/opensearch.yaml') `
       --wait --timeout 5m
     
-    Log "Deploying Wazuh..."
-    helm upgrade --install mcaas-wazuh wazuh/wazuh `
-      --namespace security-ops `
-      --values (Join-Path $scriptRoot '../deploy/values/wazuh.yaml') `
-      --wait --timeout 10m
+    Log "Deploying Wazuh from manifests..."
+    $wazuhRepo = Join-Path $tmpDir 'wazuh-kubernetes'
+    if (-not (Test-Path $wazuhRepo)) {
+        git clone --depth 1 https://github.com/wazuh/wazuh-kubernetes.git $wazuhRepo
+    }
+    kubectl apply -k (Join-Path $wazuhRepo 'envs/local-env')
+    kubectl wait --for=condition=ready pod -l app=wazuh-manager -n security-ops --timeout=5m
+    kubectl wait --for=condition=ready pod -l app=wazuh-indexer -n security-ops --timeout=5m
+    kubectl wait --for=condition=ready pod -l app=wazuh-dashboard -n security-ops --timeout=5m
     
     Log "Deploying Shuffle..."
     helm upgrade --install mcaas-shuffle oci://ghcr.io/shuffle/charts/shuffle `
@@ -77,7 +116,7 @@ try {
     
     Log "Deploying CISO Assistant..."
     helm upgrade --install ciso-assistant oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant `
-      --version 0.1.0 `
+      --version 0.11.4 `
       --namespace grc `
       --values (Join-Path $scriptRoot '../deploy/values/ciso-assistant.yaml') `
       --wait --timeout 5m

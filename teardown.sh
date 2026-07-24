@@ -17,9 +17,9 @@ log "Starting MCaaS teardown..."
 declare -A releases=(
     ["ciso-assistant"]="grc"
     ["zammad"]="managed-it"
+    ["mcaas-wazuh"]="security-ops"
     ["mcaas-shuffle"]="security-ops"
     ["mcaas-opensearch"]="security-ops"
-    ["mcaas-wazuh"]="security-ops"
     ["mcaas-postgresql"]="managed-it"
 )
 
@@ -35,13 +35,17 @@ for release in "${!releases[@]}"; do
 done
 
 # --- Delete Manifest-Based Deployments (Wazuh) ---
-log "Deleting Wazuh resources from manifests..."
-# This is now handled by the Helm uninstall loop above.
+log "Deleting Wazuh resources and namespace..."
+TMP_DIR="$(cd "${SCRIPT_ROOT}/.." && pwd)/.tmp"
+WAZUH_ENV="${TMP_DIR}/wazuh-kubernetes/envs/local-env"
+if [ -d "$WAZUH_ENV" ]; then
+    kubectl delete -k "$WAZUH_ENV" --ignore-not-found=true
+fi
+kubectl delete namespace wazuh --ignore-not-found=true
 
 # --- Delete Persistent Volume Claims ---
 log "Deleting persistent volume claims..."
 kubectl delete pvc -n security-ops -l app.kubernetes.io/instance=mcaas-opensearch --ignore-not-found=true
-kubectl delete pvc -n security-ops -l app=wazuh-indexer --ignore-not-found=true
 kubectl delete pvc -n managed-it -l app.kubernetes.io/instance=mcaas-postgresql --ignore-not-found=true
 
 # --- Delete Namespaces and other base resources ---

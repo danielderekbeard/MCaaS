@@ -1,15 +1,15 @@
 postgresql:
   enabled: false
-externalDatabase:
+backend:
+  config:
+    databaseType: externalPgsql
+externalPgsql:
   host: "mcaas-postgresql-postgresql.managed-it.svc.cluster.local"
   port: 5432
   user: "postgres"
-  passwordSecret:
-    name: "mcaas-postgresql-secret"
-    key: "postgres-password"
-database: "ciso_assistant"
-frontend:
-  ingress:
-    enabled: true
-    annotations:
-      nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+  existingSecret: "mcaas-postgresql-secret"
+  database: "ciso-assistant"
+ingress:
+  enabled: true
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"

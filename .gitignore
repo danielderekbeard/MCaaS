@@ -4,6 +4,8 @@
 .kubeconfig-github.yaml
 *.local
 *.log
+.tmp/
+logs/
 **/node_modules
 **/__pycache__
 **/.pytest_cache

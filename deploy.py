@@ -78,14 +78,11 @@ def main():
             "--wait", "--timeout", "5m"
         ])
 
-        logging.info("Cloning Wazuh and Shuffle repositories...")
+        logging.info("Cloning Wazuh repository...")
         TMP_DIR.mkdir(exist_ok=True)
         wazuh_dir = TMP_DIR / "wazuh-kubernetes"
-        shuffle_dir = TMP_DIR / "shuffle"
         if not wazuh_dir.exists():
             run_command(["git", "clone", "--depth", "1", "https://github.com/wazuh/wazuh-kubernetes.git", str(wazuh_dir)])
-        if not shuffle_dir.exists():
-            run_command(["git", "clone", "--depth", "1", "https://github.com/shuffle/shuffle.git", str(shuffle_dir)])
 
         logging.info("Deploying Wazuh from manifests...")
         run_command(["kubectl", "apply", "-k", str(wazuh_dir / "envs/local-env")])
@@ -95,9 +92,9 @@ def main():
         run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-indexer", "-n", "security-ops", "--timeout=5m"])
         run_command(["kubectl", "wait", "--for=condition=ready", "pod", "-l", "app=wazuh-dashboard", "-n", "security-ops", "--timeout=5m"])
 
-        logging.info("Deploying Shuffle...")
+        logging.info("Deploying Shuffle (OCI chart)...")
         run_command([
-            "helm", "upgrade", "--install", "mcaas-shuffle", str(shuffle_dir / "deploy/helm/shuffle"),
+            "helm", "upgrade", "--install", "mcaas-shuffle", "oci://ghcr.io/shuffle/charts/shuffle",
             "--namespace", "security-ops",
             "--values", str(PROJECT_ROOT / "deploy/values/shuffle.yaml"),
             "--wait", "--timeout", "5m"
@@ -117,8 +114,8 @@ def main():
 
         logging.info("Deploying CISO Assistant...")
         run_command([
-            "helm", "upgrade", "--install", "ciso-assistant", "oci://ghcr.io/intuitem/ca-helm-chart/ciso-assistant",
-            "--version", "0.1.0",
+            "helm", "upgrade", "--install", "ciso-assistant", "oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant",
+            "--version", "0.11.4",
             "--namespace", "grc",
             "--values", str(PROJECT_ROOT / "deploy/values/ciso-assistant.yaml"),
             "--wait", "--timeout", "5m"

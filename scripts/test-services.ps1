@@ -3,6 +3,41 @@ param()
 $ErrorActionPreference = 'Stop'
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+function Set-KubeContextIfAvailable {
+    $kubeConfigPath = Join-Path $HOME '.kube\config'
+    if (-not (Test-Path $kubeConfigPath)) {
+        return
+    }
+
+    $contexts = kubectl config get-contexts -o name --kubeconfig $kubeConfigPath 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return
+    }
+
+    foreach ($contextName in @('rancher-desktop', 'docker-desktop', 'mcaas-context')) {
+        if ($contexts -contains $contextName) {
+            kubectl config use-context $contextName --kubeconfig $kubeConfigPath | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                return
+            }
+        }
+    }
+}
+
+function Set-KubeEnv {
+    $kubeConfigPath = Join-Path $HOME '.kube\config'
+    if (Test-Path $kubeConfigPath) {
+        $env:KUBECONFIG = $kubeConfigPath
+    }
+
+    if (-not $env:KUBECONFIG) {
+        $env:KUBECONFIG = Join-Path $HOME '.kube\config'
+    }
+}
+
+Set-KubeEnv
+Set-KubeContextIfAvailable
+
 # Logging (PowerShell transcript)
 $LogDir = Join-Path $scriptRoot '..\logs'
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
