@@ -64,10 +64,15 @@ try {
     # We must run their provided script to generate the certs and configs.
     Push-Location -Path $wazuhDir
     try {
-        # This script generates certificates and config files, replacing the broken symlinks.
+      # This script generates certificates and config files, replacing the broken symlinks.
+      if (Test-Path -Path './generate-local-env.ps1') {
         & ./generate-local-env.ps1
+      } else {
+        Log "generate-local-env.ps1 not found in $wazuhDir; skipping generation step."
+        Log "If you need generated certs/configs, run the repository's preparation script manually."
+      }
     } finally {
-        Pop-Location
+      Pop-Location
     }
 
     Log "Deploying Wazuh from manifests..."
