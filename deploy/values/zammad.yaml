@@ -8,6 +8,7 @@ zammadConfig:
     db: "zammad"
   elasticsearch:
     enabled: false
+    initialisation: false  # Skip elasticsearch-init container since ES is disabled
   redis:
     enabled: true
     host: "mcaas-zammad-redis"
