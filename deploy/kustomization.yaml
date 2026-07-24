@@ -1,2 +1,3 @@
 resources:
   - namespaces.yaml
+  - cicd-service-account.yaml
