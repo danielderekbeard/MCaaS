@@ -8,7 +8,7 @@ jobs:
     runs-on: self-hosted # Assuming this runner is Windows
     defaults:
       run:
-        shell: pwsh
+        shell: powershell
 
     steps:
       - name: Checkout repository
