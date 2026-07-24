@@ -736,6 +736,60 @@ def create_secrets():
             raise RuntimeError("Failed to apply OpenSearch secret")
         logging.info("OpenSearch secret created/updated in security-ops namespace.")
 
+    # Redis secret for Zammad (in the managed-it namespace).
+    # The Zammad chart's Redis sub-chart requires a secret with the key
+    # "redis-password" containing the Redis auth password.
+    redis_pw = os.environ.get("MCAAS_REDIS_PASSWORD", "zammad")
+    proc = subprocess.run(
+        ["kubectl", "-n", "managed-it", "create", "secret", "generic",
+         "mcaas-zammad-redis-pass",
+         f"--from-literal=redis-password={redis_pw}",
+         "--dry-run=client", "-o", "yaml"],
+        capture_output=True, text=True
+    )
+    if proc.returncode != 0:
+        logging.error(f"Failed to generate Redis secret manifest: {proc.stderr}")
+        raise RuntimeError("Failed to create Redis secret")
+    if dry_run:
+        logging.info(f"Dry‑run: would apply Redis secret. Manifest:\n{proc.stdout}")
+    else:
+        apply_proc = subprocess.run(
+            ["kubectl", "apply", "-f", "-"],
+            input=proc.stdout, text=True
+        )
+        if apply_proc.returncode != 0:
+            logging.error("Failed to apply Redis secret")
+            raise RuntimeError("Failed to apply Redis secret")
+        logging.info("Redis secret created/updated in managed-it namespace.")
+
+    # Cross-namespace PostgreSQL secret for CISO Assistant.
+    # CISO Assistant runs in the 'grc' namespace but needs to connect to
+    # PostgreSQL in the 'managed-it' namespace.  Kubernetes secrets are
+    # namespace-scoped, so we create the same PostgreSQL secret in the 'grc'
+    # namespace as well.
+    proc = subprocess.run(
+        ["kubectl", "-n", "grc", "create", "secret", "generic",
+         "mcaas-postgresql-secret",
+         f"--from-literal=postgres-password={postgres_pw}",
+         f"--from-literal=password={postgres_pw}",
+         "--dry-run=client", "-o", "yaml"],
+        capture_output=True, text=True
+    )
+    if proc.returncode != 0:
+        logging.error(f"Failed to generate PostgreSQL secret for grc namespace: {proc.stderr}")
+        raise RuntimeError("Failed to create PostgreSQL secret for grc namespace")
+    if dry_run:
+        logging.info(f"Dry‑run: would apply PostgreSQL secret in grc namespace. Manifest:\n{proc.stdout}")
+    else:
+        apply_proc = subprocess.run(
+            ["kubectl", "apply", "-f", "-"],
+            input=proc.stdout, text=True
+        )
+        if apply_proc.returncode != 0:
+            logging.error("Failed to apply PostgreSQL secret in grc namespace")
+            raise RuntimeError("Failed to apply PostgreSQL secret in grc namespace")
+        logging.info("PostgreSQL secret created/updated in grc namespace (for CISO Assistant).")
+
 def _create_database(pod_name, namespace, db_name, secret_name, secret_key):
     """Create a database in the PostgreSQL instance running in the cluster.
 
@@ -770,12 +824,15 @@ def _create_database(pod_name, namespace, db_name, secret_name, secret_key):
     import base64
     db_password = base64.b64decode(pw_result.stdout.strip()).decode()
 
-    # Create the database (idempotent — IF NOT EXISTS)
+    # Create the database (idempotent — IF NOT EXISTS).
+    # We pipe the SQL via stdin rather than using psql's -c flag because
+    # PowerShell on Windows strips double-quotes from arguments, which
+    # breaks identifiers that contain hyphens (e.g. "ciso-assistant").
+    sql = f'CREATE DATABASE "{db_name}";\n'
     result = subprocess.run(
-        ["kubectl", "exec", pod_name, "-n", namespace, "--",
-         "env", f"PGPASSWORD={db_password}", "psql", "-U", "postgres",
-         "-c", f"CREATE DATABASE \"{db_name}\";"],
-        capture_output=True, text=True
+        ["kubectl", "exec", "-i", pod_name, "-n", namespace, "--",
+         "env", f"PGPASSWORD={db_password}", "psql", "-U", "postgres"],
+        input=sql, capture_output=True, text=True
     )
     if result.returncode != 0:
         # Database may already exist — that's fine
