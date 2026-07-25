@@ -1,0 +1,40 @@
+# DEPRECATED: This file is a reference template only.
+# deploy-aws.py now generates Ingress manifests dynamically via
+# generate_ciso_ingress_manifest() using values from the client config.
+# Do NOT apply this file directly for new deployments.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mcaas-ciso-ciso-assistant
+  namespace: grc
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443},{"HTTP":80}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:eu-west-1:891612549926:certificate/61f02915-42de-4f6c-a028-451937a5e496
+    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
+spec:
+  ingressClassName: alb
+  rules:
+  - host: ciso.testcustomer.socom.co.il
+    http:
+      paths:
+      - backend:
+          service:
+            name: mcaas-ciso-ciso-assistant-frontend
+            port:
+              number: 80
+        path: /
+        pathType: Prefix
+      - backend:
+          service:
+            name: mcaas-ciso-ciso-assistant-backend
+            port:
+              number: 80
+        path: /api/
+        pathType: Prefix
+  tls:
+  - hosts:
+    - ciso.testcustomer.socom.co.il
+    secretName: ciso-testcustomer-socom-co-il-tls

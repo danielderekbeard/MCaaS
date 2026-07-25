@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=
 # AWS/EKS-specific values for OpenSearch Helm chart
 # Overrides the default deploy/values/opensearch.yaml for AWS EKS
 #

@@ -1,0 +1,19 @@
+# NOTE: This file is a reference template only.
+# deploy-aws.py generates the ClusterIssuer dynamically via setup_cloudflare_dns01()
+# using the email from the client config (aws.letsencrypt_email).
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-cloudflare
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@socom.co.il
+    privateKeySecretRef:
+      name: letsencrypt-cloudflare
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token-secret
+              key: api-token

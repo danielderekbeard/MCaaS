@@ -23,7 +23,7 @@ metadata:
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: admin@skyddex.com
+    email: admin@socom.co.il
     privateKeySecretRef:
       name: letsencrypt-prod
     solvers:
@@ -40,7 +40,7 @@ metadata:
 spec:
   acme:
     server: https://acme-staging-v02.api.letsencrypt.org/directory
-    email: admin@skyddex.com
+    email: admin@socom.co.il
     privateKeySecretRef:
       name: letsencrypt-staging
     solvers:
@@ -49,11 +49,11 @@ spec:
             class: alb
 
 ---
-# DNS01 ClusterIssuer for Cloudflare (recommended for *.app.skyddex.com)
+# DNS01 ClusterIssuer for Cloudflare (recommended for *.socom.co.il)
 # This uses the Cloudflare DNS01 challenge which supports wildcard certificates.
 #
 # Prerequisites:
-#   1. Create a Cloudflare API token with DNS Edit permission for app.skyddex.com
+#   1. Create a Cloudflare API token with DNS Edit permission for socom.co.il
 #   2. Create a Kubernetes secret with the token:
 #      kubectl create secret generic cloudflare-api-token-secret \
 #        --namespace cert-manager \
@@ -68,7 +68,7 @@ spec:
 # spec:
 #   acme:
 #     server: https://acme-v02.api.letsencrypt.org/directory
-#     email: admin@skyddex.com
+#     email: admin@socom.co.il
 #     privateKeySecretRef:
 #       name: letsencrypt-cloudflare
 #     solvers:

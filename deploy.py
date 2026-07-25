@@ -50,6 +50,8 @@ DEFAULT_CONFIG = {
     "ingress": {
         "zammad_host": "zammad.mcaas.example.com",
         "ciso_host": "ciso.mcaas.example.com",
+        "shuffle_host": "shuffle.mcaas.example.com",
+        "wazuh_host": "wazuh.mcaas.example.com",
     },
 }
 
@@ -123,6 +125,8 @@ def load_client_config(client_name: str | None) -> dict:
     ingress = c.get("ingress", {}) or {}
     zammad_host = ingress.get("zammad_host") or f"zammad.{c['domain']}"
     ciso_host = ingress.get("ciso_host") or f"ciso.{c['domain']}"
+    shuffle_host = ingress.get("shuffle_host") or f"shuffle.{c['domain']}"
+    wazuh_host = ingress.get("wazuh_host") or f"wazuh.{c['domain']}"
 
     cfg = {
         "prefix": c["prefix"],
@@ -133,6 +137,8 @@ def load_client_config(client_name: str | None) -> dict:
         "ingress": {
             "zammad_host": zammad_host,
             "ciso_host": ciso_host,
+            "shuffle_host": shuffle_host,
+            "wazuh_host": wazuh_host,
         },
         "client_name": client_name,
         "env_prefix": c["prefix"].upper().replace("-", "_"),

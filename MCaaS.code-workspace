@@ -27,8 +27,14 @@
 		},
 		"yaml.schemas": {
 			"kubernetes": [
-				"*.yaml",
-				"*.yml"
+				"aws/*.yaml",
+				"deploy/*.yaml",
+				"wazuh-kubernetes/**/*.yaml"
+			],
+			"./.vscode/empty-schema.json": [
+				"clients/**/values/ciso-assistant.yaml",
+				"clients/**/values/opensearch.yaml",
+				"clients/**/values/zammad.yaml"
 			]
 		},
 		"[yaml]": {

@@ -1,0 +1,33 @@
+# DEPRECATED: This file is a reference template only.
+# deploy-aws.py now generates Ingress manifests dynamically via
+# generate_zammad_ingress_manifest() using values from the client config.
+# Do NOT apply this file directly for new deployments.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mcaas-zammad
+  namespace: managed-it
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443},{"HTTP":80}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:eu-west-1:891612549926:certificate/b89bdcd4-7986-4eb8-8dfa-f2fd8f6a72d6
+    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
+spec:
+  ingressClassName: alb
+  rules:
+  - host: zammad.testcustomer.socom.co.il
+    http:
+      paths:
+      - backend:
+          service:
+            name: mcaas-zammad-nginx
+            port:
+              number: 8080
+        path: /
+        pathType: ImplementationSpecific
+  tls:
+  - hosts:
+    - zammad.testcustomer.socom.co.il
+    secretName: zammad-testcustomer-socom-co-il-tls

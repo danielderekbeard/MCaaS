@@ -1,0 +1,36 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shuffle
+  namespace: security-ops
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443},{"HTTP":80}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:eu-west-1:891612549926:certificate/3ff23afd-a25e-4e8b-b9c1-3df3ebec6552
+    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
+spec:
+  ingressClassName: alb
+  rules:
+  - host: shuffle.testcustomer.socom.co.il
+    http:
+      paths:
+      - path: /api/
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: shuffle-backend
+            port:
+              number: 5001
+      - path: /
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: shuffle-frontend
+            port:
+              number: 80
+  tls:
+  - hosts:
+    - shuffle.testcustomer.socom.co.il
+    secretName: shuffle-testcustomer-socom-co-il-tls

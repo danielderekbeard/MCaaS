@@ -1,0 +1,73 @@
+# DEPRECATED: This file is a reference template only.
+# deploy-aws.py now generates Ingress manifests dynamically via
+# generate_wazuh_ingress_manifest() using values from the client config.
+# Do NOT apply this file directly for new deployments.
+#
+# ALB Ingress for Wazuh Dashboard
+# This replaces the NLB-based LoadBalancer service with an ALB ingress
+# that terminates TLS with a valid certificate.
+#
+# Certificate flow:
+#   1. cert-manager issues a Let's Encrypt cert via DNS01 challenge (Cloudflare)
+#   2. cert-manager stores the cert as a K8s TLS secret (wazuh-testcustomer-socom-co-il-tls)
+#   3. The cert is manually imported into AWS ACM
+#   4. The certificate-arn annotation is updated with the ACM ARN
+#
+# The Wazuh dashboard serves HTTPS with a self-signed cert on port 5601.
+# The ALB terminates TLS for the browser (Let's Encrypt / ACM cert) and
+# re-encrypts to the backend (self-signed cert). AWS ALB does not verify
+# backend certificates.
+#
+# Prerequisites:
+#   - cert-manager + ClusterIssuer (letsencrypt-cloudflare) must be installed
+#   - Cloudflare API token secret must be valid in cert-manager namespace
+#   - ACM certificate-arn must be set (applied AFTER cert import into ACM)
+#
+# Post-deployment steps:
+#   1. Apply the Certificate resource first (see wazuh-certificate.yaml)
+#   2. Wait for cert-manager to issue the Let's Encrypt certificate
+#   3. Export the cert from K8s secret and import into ACM
+#   4. Update certificate-arn annotation with the ACM ARN
+#   5. Apply this ingress
+#   6. Switch dashboard service from LoadBalancer to ClusterIP
+#   7. Update Cloudflare CNAME to point to the new ALB hostname
+#   8. Remove the old NLB
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wazuh-dashboard
+  namespace: wazuh
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    # ACM ARN — MUST be updated with the actual ARN after importing the
+    # Let's Encrypt cert into ACM. The placeholder below will NOT work.
+    # After import, update with: kubectl annotate ingress wazuh-dashboard -n wazuh \
+    #   alb.ingress.kubernetes.io/certificate-arn=<ACTUAL_ACM_ARN> --overwrite
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:eu-west-1:891612549926:certificate/ea018fb1-e052-432d-95ef-9fd2dbe29e15
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443},{"HTTP":80}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/backend-protocol: HTTPS
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTPS
+    alb.ingress.kubernetes.io/healthcheck-path: /app/login
+    alb.ingress.kubernetes.io/healthcheck-port: "5601"
+    alb.ingress.kubernetes.io/success-codes: "200,302"
+    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
+spec:
+  ingressClassName: alb
+  rules:
+    - host: wazuh.testcustomer.socom.co.il
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dashboard
+                port:
+                  number: 443
+  tls:
+    - hosts:
+        - wazuh.testcustomer.socom.co.il
+      secretName: wazuh-testcustomer-socom-co-il-tls

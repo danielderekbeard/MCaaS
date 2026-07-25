@@ -1,0 +1,16 @@
+# DEPRECATED: This file is a reference template only.
+# deploy-aws.py now generates Certificate manifests dynamically via
+# generate_certificate_manifest() using values from the client config.
+# Do NOT apply this file directly for new deployments.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: zammad-testcustomer-socom-co-il-tls
+  namespace: managed-it
+spec:
+  dnsNames:
+  - zammad.testcustomer.socom.co.il
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt-cloudflare
+  secretName: zammad-testcustomer-socom-co-il-tls

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../.vscode/empty-schema.json
 # AWS/EKS-specific values for CISO Assistant Helm chart
 # Overrides the default deploy/values/ciso-assistant.yaml for AWS EKS
 #
@@ -5,37 +6,47 @@
 # - Uses AWS ALB IngressClass instead of nginx
 # - Adds TLS annotations for cert-manager with ALB
 # - Adds resource requests for EKS scheduling
+# - Uses external PostgreSQL instead of built-in
+
+global:
+  domain: ciso.testcustomer.socom.co.il
+  tls: true
+
+backend:
+  config:
+    databaseType: externalPgsql
+    djangoExistingSecretKey: mcaas-ciso-secret
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+frontend:
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
 
 ingress:
   enabled: true
-  className: alb
+  ingressClassName: alb
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443},{"HTTP":80}]'
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     cert-manager.io/cluster-issuer: letsencrypt-prod
-  tls: true
-  hosts:
-    - name: ciso.app.skyddex.com
+  tls:
+  - hosts:
+    - ciso.testcustomer.socom.co.il
+    secretName: ciso-testcustomer-tls
 
 postgresql:
   enabled: false
 
-externalPostgresql:
+externalPgsql:
   host: mcaas-postgresql.managed-it.svc.cluster.local
-  port: 5432
-  username: postgres
+  user: postgres
   database: ciso-assistant
-  existingSecret:
-    name: mcaas-postgresql-secret
-    key: postgres-password
-
-django:
-  existingSecret: mcaas-ciso-secret
-  existingSecretKey: django-secret-key
-
-resources:
-  requests:
-    cpu: 250m
-    memory: 256Mi
+  port: 5432
+  existingSecret: mcaas-postgresql-secret

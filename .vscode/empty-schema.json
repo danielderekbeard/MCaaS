@@ -1,0 +1,7 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Empty Schema",
+  "description": "An empty schema that allows any object structure to bypass incorrect validation.",
+  "type": "object",
+  "additionalProperties": true
+}

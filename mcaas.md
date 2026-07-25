@@ -1,4 +1,4 @@
-Skyddex MCaaS Infrastructure Manifests
+MCaaS Infrastructure Manifests
 Technical Site Lead: Daniel Beard
 Target Framework: veloctrl IaC Integration
 

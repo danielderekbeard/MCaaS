@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../shuffle-chart-temp/shuffle/values.schema.json
 # AWS/EKS-specific values for Shuffle SOAR Helm chart
 # Overrides the default deploy/values/shuffle.yaml for AWS EKS
 #
@@ -6,17 +7,50 @@
 # - Adds resource requests for EKS scheduling
 # - Disables internal OpenSearch (uses external OpenSearch)
 
+# Override fullname to prevent "mcaas-shuffle-" prefix on service names
+# The frontend nginx config hardcodes "shuffle-backend" as the upstream
+# Without this, Helm would name services "mcaas-shuffle-backend" causing DNS mismatch
+fullnameOverride: "shuffle"
+
+# Ingress is managed via a standalone manifest (clients/aws/shuffle-ingress.yaml)
+# because the Shuffle Helm chart v2.2.1 has a bug where it references
+# common.ingress.supportsIngressClassname which doesn't exist in the
+# Bitnami common library chart v2.41.0. This causes helm template/upgrade to fail.
+
 opensearch:
   enabled: false
 
 externalOpensearch:
   enabled: true
-  url: https://mcaas-opensearch.security-ops.svc.cluster.local:9200
+  url: https://opensearch-cluster-master.security-ops.svc.cluster.local:9200
   auth:
     existingSecret: mcaas-opensearch-secret
     usernameKey: opensearch-password
 
 existingSecret: mcaas-opensearch-secret
+
+# Backend environment variables for OpenSearch connectivity
+backend:
+  extraEnv:
+    - name: SHUFFLE_OPENSEARCH_URL
+      value: "https://opensearch-cluster-master.security-ops.svc.cluster.local:9200"
+    - name: SHUFFLE_OPENSEARCH_SKIPSSL_VERIFY
+      value: "true"
+    - name: SHUFFLE_OPENSEARCH_USERNAME
+      value: "admin"
+    - name: SHUFFLE_OPENSEARCH_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: mcaas-opensearch-secret
+          key: opensearch-password
+    - name: SHUFFLE_DEFAULT_USERNAME
+      value: "admin"
+    - name: SHUFFLE_DEFAULT_PASSWORD
+      value: "ShuffleAdmin123!"
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
 
 orborus:
   persistence:
@@ -33,9 +67,3 @@ frontend:
     requests:
       cpu: 250m
       memory: 128Mi
-
-backend:
-  resources:
-    requests:
-      cpu: 500m
-      memory: 512Mi

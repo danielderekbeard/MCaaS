@@ -91,25 +91,43 @@ def load_client_config(client_name):
     with open(config_path, "r") as f:
         raw = yaml.safe_load(f)
 
+    # Support both nested (client.key) and flat (key) config formats.
+    # The standard client config files use a top-level "client" key:
+    #   client:
+    #     name: aws
+    #     prefix: mcaas
+    #     ...
+    # Older or simpler configs may use flat top-level keys.
+    if raw and "client" in raw:
+        c = raw["client"]
+    else:
+        c = raw
+
+    if not c:
+        logging.error(f"Client config is empty: {config_path}")
+        sys.exit(1)
+
     # Validate required fields
     for field in ("name", "prefix", "domain", "database_name"):
-        if field not in raw:
+        if field not in c:
             logging.error(f"Client config missing required field: {field}")
             sys.exit(1)
 
-    prefix = raw["prefix"]
+    prefix = c["prefix"]
 
     # Build namespace mapping — auto-generate from prefix if not specified
-    namespaces = raw.get("namespaces", {})
+    namespaces = c.get("namespaces", {}) or {}
     ns = {}
     for key in ("managed-it", "security-ops", "grc", "wazuh"):
         ns[key] = namespaces.get(key, f"{prefix}-{key}")
 
     # Build ingress host mapping
-    ingress_raw = raw.get("ingress", {})
+    ingress_raw = c.get("ingress", {}) or {}
     ingress = {
-        "zammad_host": ingress_raw.get("zammad_host", f"zammad.{raw['domain']}"),
-        "ciso_host": ingress_raw.get("ciso_host", f"ciso.{raw['domain']}"),
+        "zammad_host": ingress_raw.get("zammad_host", f"zammad.{c['domain']}"),
+        "ciso_host": ingress_raw.get("ciso_host", f"ciso.{c['domain']}"),
+        "shuffle_host": ingress_raw.get("shuffle_host", f"shuffle.{c['domain']}"),
+        "wazuh_host": ingress_raw.get("wazuh_host", f"wazuh.{c['domain']}"),
     }
 
     # Environment variable prefix: MCAAS, ACME, etc. (uppercased, dashes→underscores)
@@ -118,9 +136,9 @@ def load_client_config(client_name):
     return {
         "prefix": prefix,
         "namespaces": ns,
-        "domain": raw["domain"],
-        "database_name": raw["database_name"],
-        "wazuh_version": raw.get("wazuh_version", DEFAULT_CONFIG["wazuh_version"]),
+        "domain": c["domain"],
+        "database_name": c["database_name"],
+        "wazuh_version": c.get("wazuh_version", DEFAULT_CONFIG["wazuh_version"]),
         "ingress": ingress,
         "client_name": client_name,
         "env_prefix": env_prefix,
@@ -144,18 +162,21 @@ logging.basicConfig(
 
 
 def _add_tls_skip(command):
-    """Add --insecure-skip-tls-verify to kubectl/helm commands for self-signed clusters.
+    """Add --insecure-skip-tls-verify to kubectl commands for self-signed clusters.
 
     This is a safety net alongside kubeconfig patching.  The CI workflows replace
     certificate-authority-data with insecure-skip-tls-verify: true in the kubeconfig,
     but some environments or tool versions may not fully honour that setting.  Passing
     the flag explicitly ensures we can always reach the local k3s / Rancher Desktop
     cluster whose API server uses a self-signed certificate.
+
+    Note: ``--insecure-skip-tls-verify`` is a kubectl flag only — Helm does not
+    support it (Helm reads TLS settings from the kubeconfig instead).
     """
     if (
         isinstance(command, list)
         and len(command) >= 1
-        and command[0] in ("kubectl", "helm")
+        and command[0] == "kubectl"
     ):
         # Don't add the flag twice.
         if "--insecure-skip-tls-verify" not in command:

@@ -1,0 +1,17 @@
+client:
+  name: "testcustomer"
+  display_name: "Test Customer"
+  domain: "testcustomer.socom.co.il"
+  prefix: "testcustomer"
+  namespaces:
+    managed-it: "testcustomer-managed-it"
+    security-ops: "testcustomer-security-ops"
+    grc: "testcustomer-grc"
+    wazuh: "testcustomer-wazuh"
+  wazuh_version: "4.14.6"
+  database_name: "testcustomer_db"
+  ingress:
+    zammad_host: "zammad.testcustomer.socom.co.il"
+    ciso_host: "ciso.testcustomer.socom.co.il"
+    shuffle_host: "shuffle.testcustomer.socom.co.il"
+    wazuh_host: "wazuh.testcustomer.socom.co.il"

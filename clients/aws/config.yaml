@@ -5,7 +5,7 @@
 client:
   name: aws
   prefix: mcaas
-  domain: app.skyddex.com  # Cloudflare domain
+  domain: testcustomer.socom.co.il  # Cloudflare domain
   database_name: mcaas_db
 
   # Namespace configuration (prefixed with client prefix by default)
@@ -20,13 +20,15 @@ client:
 
   # Ingress configuration for AWS ALB
   ingress:
-    zammad_host: zammad.app.skyddex.com
-    ciso_host: ciso.app.skyddex.com
+    zammad_host: zammad.testcustomer.socom.co.il
+    ciso_host: ciso.testcustomer.socom.co.il
+    shuffle_host: shuffle.testcustomer.socom.co.il
+    wazuh_host: wazuh.testcustomer.socom.co.il
 
   # AWS-specific settings (used by deploy-aws.py)
   aws:
     cluster_name: mcaas-eks
-    region: us-east-1
+    region: eu-west-1
     node_group_workers:
       instance_type: m5.xlarge
       desired_capacity: 4
@@ -37,3 +39,15 @@ client:
       desired_capacity: 2
       min_size: 1
       max_size: 4
+
+    # ACM certificate ARNs for each service (import from K8s TLS secrets into AWS ACM)
+    # These are required for ALB Ingress to serve HTTPS traffic.
+    # After cert-manager issues TLS certs, export and import to ACM, then add ARNs here.
+    acm_cert_arns:
+      wazuh: "arn:aws:acm:eu-west-1:891612549926:certificate/ea018fb1-e052-432d-95ef-9fd2dbe29e15"
+      shuffle: "arn:aws:acm:eu-west-1:891612549926:certificate/3ff23afd-a25e-4e8b-b9c1-3df3ebec6552"
+      ciso: "arn:aws:acm:eu-west-1:891612549926:certificate/1bc0d964-9224-4552-9357-3a0ea2134b0a"
+      zammad: "arn:aws:acm:eu-west-1:891612549926:certificate/b3266045-5939-4a83-8ccb-6afed011abec"
+
+    # Let's Encrypt registration email for cert-manager
+    letsencrypt_email: "admin@socom.co.il"

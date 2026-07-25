@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=
 # AWS/EKS-specific values for Zammad Helm chart
 # Overrides the default deploy/values/zammad.yaml for AWS EKS
 #
@@ -7,20 +8,26 @@
 # - Adds TLS annotations for cert-manager with ALB
 # - Adds resource requests for EKS scheduling
 
-zammad:
-  ingress:
-    enabled: true
-    className: alb
-    annotations:
-      alb.ingress.kubernetes.io/scheme: internet-facing
-      alb.ingress.kubernetes.io/target-type: ip
-      alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443},{"HTTP":80}]'
-      alb.ingress.kubernetes.io/ssl-redirect: "443"
-      cert-manager.io/cluster-issuer: letsencrypt-prod
-    tls: true
-    hosts:
-      - name: zammad.app.skyddex.com
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443},{"HTTP":80}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls:
+    - secretName: zammad-testcustomer-socom-co-il-tls
+      hosts:
+        - zammad.testcustomer.socom.co.il
+  hosts:
+    - host: zammad.testcustomer.socom.co.il
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
 
+zammadConfig:
   redis:
     auth:
       existingSecret: mcaas-zammad-redis-pass

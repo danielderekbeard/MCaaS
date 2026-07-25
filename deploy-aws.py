@@ -68,6 +68,9 @@ EKSCTL_CLUSTER_CONFIG = AWS_DIR / "eksctl-cluster.yaml"
 
 
 # --- AWS Client Configuration (mirrors deploy.py DEFAULT_CONFIG) ---
+# NOTE: AWS_CONFIG provides defaults when no --client is specified.
+# These defaults should NOT be used for production — always deploy with
+# --client <name> to get proper per-customer configuration.
 AWS_CONFIG = {
     "prefix": "mcaas",
     "namespaces": {
@@ -76,12 +79,17 @@ AWS_CONFIG = {
         "grc": "grc",
         "wazuh": "wazuh",
     },
-    "domain": "app.skyddex.com",
+    "domain": "<DOMAIN_REQUIRED>",  # Must be overridden via --client config
     "database_name": "mcaas_db",
     "wazuh_version": "4.14.6",
     "ingress": {
-        "zammad_host": "zammad.app.skyddex.com",
-        "ciso_host": "ciso.app.skyddex.com",
+        # Hosts are auto-generated from domain if not set in client config
+    },
+    "aws": {
+        # ACM certificate ARNs must be provided per-service after cert import
+        # Example: {"wazuh": "arn:aws:acm:eu-west-1:123:certificate/...", ...}
+        "acm_cert_arns": {},
+        "letsencrypt_email": "admin@socom.co.il",
     },
 }
 
@@ -142,6 +150,12 @@ def load_aws_client_config(client_name: str | None) -> dict:
     ingress = c.get("ingress", {}) or {}
     zammad_host = ingress.get("zammad_host") or f"zammad.{c['domain']}"
     ciso_host = ingress.get("ciso_host") or f"ciso.{c['domain']}"
+    shuffle_host = ingress.get("shuffle_host") or f"shuffle.{c['domain']}"
+    wazuh_host = ingress.get("wazuh_host") or f"wazuh.{c['domain']}"
+
+    aws_config = c.get("aws", {}) or {}
+    acm_cert_arns = aws_config.get("acm_cert_arns", {}) or {}
+    letsencrypt_email = aws_config.get("letsencrypt_email", "admin@socom.co.il")
 
     cfg = {
         "prefix": c["prefix"],
@@ -152,6 +166,16 @@ def load_aws_client_config(client_name: str | None) -> dict:
         "ingress": {
             "zammad_host": zammad_host,
             "ciso_host": ciso_host,
+            "shuffle_host": shuffle_host,
+            "wazuh_host": wazuh_host,
+        },
+        "aws": {
+            "cluster_name": aws_config.get("cluster_name", DEFAULT_EKS_CLUSTER),
+            "region": aws_config.get("region", DEFAULT_EKS_REGION),
+            "node_group_workers": aws_config.get("node_group_workers", {}),
+            "node_group_monitoring": aws_config.get("node_group_monitoring", {}),
+            "acm_cert_arns": acm_cert_arns,
+            "letsencrypt_email": letsencrypt_email,
         },
         "client_name": client_name,
         "env_prefix": c["prefix"].upper().replace("-", "_"),
@@ -675,15 +699,17 @@ def install_cert_manager():
     )
 
 
-def setup_cloudflare_dns01(api_token: str):
+def setup_cloudflare_dns01(
+    api_token: str, letsencrypt_email: str = "admin@socom.co.il"
+):
     """Set up Cloudflare DNS01 challenge support for cert-manager.
 
     Creates a Kubernetes Secret with the Cloudflare API token in the
-    cert-manager namespace, then applies the letsencrypt-cloudflare
-    ClusterIssuer from aws/ingress-and-cert.yaml.
+    cert-manager namespace, then applies a letsencrypt-cloudflare
+    ClusterIssuer with the specified email.
 
     This enables automatic wildcard certificate provisioning for
-    *.app.skyddex.com via Let's Encrypt DNS01 challenges.
+    the configured domain via Let's Encrypt DNS01 challenges.
     """
     dry_run = globals().get("DRY_RUN", False)
 
@@ -745,108 +771,38 @@ def setup_cloudflare_dns01(api_token: str):
         check=False,
     )
 
-    # Read and uncomment the Cloudflare ClusterIssuer from ingress-and-cert.yaml
-    ingress_file = AWS_DIR / "ingress-and-cert.yaml"
-    if not ingress_file.exists():
-        logging.error(f"Ingress/cert file not found: {ingress_file}")
-        return
+    # Generate and apply the Cloudflare ClusterIssuer dynamically
+    # (instead of parsing/uncommenting the static file, which had hardcoded email)
+    cluster_issuer_manifest = (
+        "apiVersion: cert-manager.io/v1\n"
+        "kind: ClusterIssuer\n"
+        "metadata:\n"
+        "  name: letsencrypt-cloudflare\n"
+        "spec:\n"
+        "  acme:\n"
+        "    server: https://acme-v02.api.letsencrypt.org/directory\n"
+        f"    email: {letsencrypt_email}\n"
+        "    privateKeySecretRef:\n"
+        "      name: letsencrypt-cloudflare\n"
+        "    solvers:\n"
+        "      - dns01:\n"
+        "          cloudflare:\n"
+        "            apiTokenSecretRef:\n"
+        "              name: cloudflare-api-token-secret\n"
+        "              key: api-token\n"
+    )
 
-    content = ingress_file.read_text(encoding="utf-8")
-
-    # Check if the Cloudflare ClusterIssuer is already uncommented
-    if "name: letsencrypt-cloudflare" in content and not content.strip().startswith(
-        "#"
-    ):
-        # Check if it's an active (uncommented) resource
-        lines = content.split("\n")
-        in_cloudflare_block = False
-        uncommented = False
-        for line in lines:
-            if "name: letsencrypt-cloudflare" in line and not line.strip().startswith(
-                "#"
-            ):
-                uncommented = True
-                break
-
-        if uncommented:
-            logging.info("Cloudflare ClusterIssuer already active, applying...")
-            run_command(
-                ["kubectl", "apply", "-f", str(ingress_file)],
-                check=True,
-            )
-            logging.info("Cloudflare ClusterIssuer applied.")
-            return
-
-    # Uncomment the Cloudflare ClusterIssuer block
-    # Lines starting with "# " within the block need the "# " prefix removed
-    uncommented_lines = []
-    in_cloudflare_block = False
-    block_indent = None
-
-    for line in content.split("\n"):
-        stripped = line.strip()
-
-        # Detect start of the commented Cloudflare block
-        if (
-            stripped.startswith("# apiVersion: cert-manager.io/v1")
-            and "letsencrypt-cloudflare" in content
-        ):
-            # Look ahead to see if this is the cloudflare block
-            pass
-
-        if stripped == "# ---":
-            # Check if next non-empty line starts cloudflare block
-            # We'll handle this differently
-            pass
-
-        # Simple approach: uncomment lines that are part of the cloudflare block
-        # The block is delimited by "# ---" and contains "letsencrypt-cloudflare"
-        if "# name: letsencrypt-cloudflare" in stripped:
-            in_cloudflare_block = True
-
-        if in_cloudflare_block:
-            if stripped.startswith("#"):
-                # Remove the "# " prefix (or just "#" if no space)
-                if stripped.startswith("# "):
-                    uncommented_lines.append(line.replace("# ", "", 1))
-                elif stripped.startswith("#"):
-                    uncommented_lines.append(line.replace("#", "", 1).rstrip())
-            else:
-                uncommented_lines.append(line)
-
-            # End of block: blank line or next "---" after content
-            if stripped and not stripped.startswith("#") and stripped != "---":
-                pass  # still in block
-        else:
-            uncommented_lines.append(line)
-
-        if in_cloudflare_block and stripped == "---" and line.strip() == "---":
-            in_cloudflare_block = False
-
-    # Write a temporary file with the uncommented content
-    import tempfile
-
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml", delete=False, encoding="utf-8"
-    ) as tmp:
-        tmp.write("\n".join(uncommented_lines))
-        tmp_path = tmp.name
-
-    try:
-        logging.info("Applying Cloudflare ClusterIssuer...")
-        run_command(
-            ["kubectl", "apply", "-f", tmp_path],
-            check=True,
-        )
-        logging.info("Cloudflare ClusterIssuer applied successfully.")
-        logging.info(
-            "You can now use 'cert-manager.io/cluster-issuer: letsencrypt-cloudflare' "
-            "in your Ingress annotations for wildcard certificates on *.app.skyddex.com."
-        )
-    finally:
-        import os
-
-        os.unlink(tmp_path)
+    logging.info("Applying Cloudflare ClusterIssuer...")
+    run_command(
+        ["kubectl", "apply", "-f", "-"],
+        check=True,
+        input_data=cluster_issuer_manifest,
+    )
+    logging.info("Cloudflare ClusterIssuer applied successfully.")
+    logging.info(
+        "You can now use 'cert-manager.io/cluster-issuer: letsencrypt-cloudflare' "
+        "in your Ingress annotations for wildcard certificates."
+    )
 
 
 def apply_aws_storage_classes():
@@ -1425,6 +1381,400 @@ def check_kubectl_connectivity():
 
 
 # ============================================================
+# Certificate & Ingress Manifest Generation
+# ============================================================
+
+
+def generate_certificate_manifest(service: str, namespace: str, domain: str) -> str:
+    """Generate a cert-manager Certificate manifest for a service.
+
+    Args:
+        service: Service name (e.g., 'wazuh', 'ciso', 'shuffle', 'zammad')
+        namespace: Kubernetes namespace for the certificate
+        domain: Full domain (e.g., 'wazuh.testcustomer.socom.co.il')
+
+    Returns:
+        YAML manifest string for the Certificate resource
+    """
+    # Derive a safe Kubernetes name from the domain (replace dots with hyphens)
+    safe_name = domain.replace(".", "-")
+    secret_name = f"{safe_name}-tls"
+
+    manifest = (
+        f"apiVersion: cert-manager.io/v1\n"
+        f"kind: Certificate\n"
+        f"metadata:\n"
+        f"  name: {safe_name}-tls\n"
+        f"  namespace: {namespace}\n"
+        f"spec:\n"
+        f"  secretName: {secret_name}\n"
+        f"  dnsNames:\n"
+        f"    - {domain}\n"
+        f"  issuerRef:\n"
+        f"    name: letsencrypt-cloudflare\n"
+        f"    kind: ClusterIssuer\n"
+    )
+    return manifest
+
+
+def generate_wazuh_ingress_manifest(cfg: dict) -> str:
+    """Generate the Wazuh Dashboard Ingress manifest.
+
+    Wazuh requires HTTPS backend-protocol and specific healthcheck settings.
+    """
+    host = cfg["ingress"]["wazuh_host"]
+    ns = cfg["namespaces"]["wazuh"]
+    acm_arn = cfg["aws"]["acm_cert_arns"].get("wazuh", "")
+    safe_name = host.replace(".", "-")
+
+    annotations = {
+        "alb.ingress.kubernetes.io/scheme": "internet-facing",
+        "alb.ingress.kubernetes.io/target-type": "ip",
+        "alb.ingress.kubernetes.io/ingress-class-name": "alb",
+        "alb.ingress.kubernetes.io/backend-protocol": "HTTPS",
+        "alb.ingress.kubernetes.io/healthcheck-protocol": "HTTPS",
+        "alb.ingress.kubernetes.io/healthcheck-path": "/app/login",
+        "alb.ingress.kubernetes.io/healthcheck-port": "5601",
+        "alb.ingress.kubernetes.io/success-codes": "200,302",
+        "cert-manager.io/cluster-issuer": "letsencrypt-cloudflare",
+    }
+    if acm_arn:
+        annotations["alb.ingress.kubernetes.io/certificate-arn"] = acm_arn
+
+    annotations_str = "\n".join(f'    {k}: "{v}"' for k, v in annotations.items())
+
+    manifest = (
+        f"apiVersion: networking.k8s.io/v1\n"
+        f"kind: Ingress\n"
+        f"metadata:\n"
+        f"  name: wazuh-dashboard\n"
+        f"  namespace: {ns}\n"
+        f"  annotations:\n"
+        f"{annotations_str}\n"
+        f"spec:\n"
+        f"  ingressClassName: alb\n"
+        f"  tls:\n"
+        f"    - hosts:\n"
+        f"        - {host}\n"
+        f"      secretName: {safe_name}-tls\n"
+        f"  rules:\n"
+        f"    - host: {host}\n"
+        f"      http:\n"
+        f"        paths:\n"
+        f"          - path: /\n"
+        f"            pathType: Prefix\n"
+        f"            backend:\n"
+        f"              service:\n"
+        f"                name: dashboard\n"
+        f"                port:\n"
+        f"                  number: 443\n"
+    )
+    return manifest
+
+
+def generate_shuffle_ingress_manifest(cfg: dict) -> str:
+    """Generate the Shuffle Ingress manifest.
+
+    Shuffle has two paths: /api/ → backend:5001 and / → frontend:80.
+    """
+    host = cfg["ingress"]["shuffle_host"]
+    ns = cfg["namespaces"]["security-ops"]
+    acm_arn = cfg["aws"]["acm_cert_arns"].get("shuffle", "")
+    safe_name = host.replace(".", "-")
+
+    annotations = {
+        "alb.ingress.kubernetes.io/scheme": "internet-facing",
+        "alb.ingress.kubernetes.io/target-type": "ip",
+        "alb.ingress.kubernetes.io/ingress-class-name": "alb",
+        "alb.ingress.kubernetes.io/backend-protocol": "HTTP",
+        "cert-manager.io/cluster-issuer": "letsencrypt-cloudflare",
+    }
+    if acm_arn:
+        annotations["alb.ingress.kubernetes.io/certificate-arn"] = acm_arn
+
+    annotations_str = "\n".join(f'    {k}: "{v}"' for k, v in annotations.items())
+
+    manifest = (
+        f"apiVersion: networking.k8s.io/v1\n"
+        f"kind: Ingress\n"
+        f"metadata:\n"
+        f"  name: shuffle-ingress\n"
+        f"  namespace: {ns}\n"
+        f"  annotations:\n"
+        f"{annotations_str}\n"
+        f"spec:\n"
+        f"  ingressClassName: alb\n"
+        f"  tls:\n"
+        f"    - hosts:\n"
+        f"        - {host}\n"
+        f"      secretName: {safe_name}-tls\n"
+        f"  rules:\n"
+        f"    - host: {host}\n"
+        f"      http:\n"
+        f"        paths:\n"
+        f"          - path: /api/\n"
+        f"            pathType: Prefix\n"
+        f"            backend:\n"
+        f"              service:\n"
+        f"                name: shuffle-backend\n"
+        f"                port:\n"
+        f"                  number: 5001\n"
+        f"          - path: /\n"
+        f"            pathType: Prefix\n"
+        f"            backend:\n"
+        f"              service:\n"
+        f"                name: shuffle-frontend\n"
+        f"                port:\n"
+        f"                  number: 80\n"
+    )
+    return manifest
+
+
+def generate_ciso_ingress_manifest(cfg: dict) -> str:
+    """Generate the CISO Assistant Ingress manifest.
+
+    CISO has two paths: / → frontend:80 and /api/ → backend:80.
+    """
+    host = cfg["ingress"]["ciso_host"]
+    ns = cfg["namespaces"]["grc"]
+    acm_arn = cfg["aws"]["acm_cert_arns"].get("ciso", "")
+    safe_name = host.replace(".", "-")
+
+    annotations = {
+        "alb.ingress.kubernetes.io/scheme": "internet-facing",
+        "alb.ingress.kubernetes.io/target-type": "ip",
+        "alb.ingress.kubernetes.io/ingress-class-name": "alb",
+        "alb.ingress.kubernetes.io/backend-protocol": "HTTP",
+        "cert-manager.io/cluster-issuer": "letsencrypt-cloudflare",
+    }
+    if acm_arn:
+        annotations["alb.ingress.kubernetes.io/certificate-arn"] = acm_arn
+
+    annotations_str = "\n".join(f'    {k}: "{v}"' for k, v in annotations.items())
+
+    manifest = (
+        f"apiVersion: networking.k8s.io/v1\n"
+        f"kind: Ingress\n"
+        f"metadata:\n"
+        f"  name: ciso-assistant-ingress\n"
+        f"  namespace: {ns}\n"
+        f"  annotations:\n"
+        f"{annotations_str}\n"
+        f"spec:\n"
+        f"  ingressClassName: alb\n"
+        f"  tls:\n"
+        f"    - hosts:\n"
+        f"        - {host}\n"
+        f"      secretName: {safe_name}-tls\n"
+        f"  rules:\n"
+        f"    - host: {host}\n"
+        f"      http:\n"
+        f"        paths:\n"
+        f"          - path: /\n"
+        f"            pathType: Prefix\n"
+        f"            backend:\n"
+        f"              service:\n"
+        f"                name: mcaas-ciso-ciso-assistant-frontend\n"
+        f"                port:\n"
+        f"                  number: 80\n"
+        f"          - path: /api/\n"
+        f"            pathType: Prefix\n"
+        f"            backend:\n"
+        f"              service:\n"
+        f"                name: mcaas-ciso-ciso-assistant-backend\n"
+        f"                port:\n"
+        f"                  number: 80\n"
+    )
+    return manifest
+
+
+def generate_zammad_ingress_manifest(cfg: dict) -> str:
+    """Generate the Zammad Ingress manifest.
+
+    Zammad has a single path: / → nginx:8080.
+    """
+    host = cfg["ingress"]["zammad_host"]
+    ns = cfg["namespaces"]["managed-it"]
+    acm_arn = cfg["aws"]["acm_cert_arns"].get("zammad", "")
+    safe_name = host.replace(".", "-")
+
+    annotations = {
+        "alb.ingress.kubernetes.io/scheme": "internet-facing",
+        "alb.ingress.kubernetes.io/target-type": "ip",
+        "alb.ingress.kubernetes.io/ingress-class-name": "alb",
+        "alb.ingress.kubernetes.io/backend-protocol": "HTTP",
+        "cert-manager.io/cluster-issuer": "letsencrypt-cloudflare",
+    }
+    if acm_arn:
+        annotations["alb.ingress.kubernetes.io/certificate-arn"] = acm_arn
+
+    annotations_str = "\n".join(f'    {k}: "{v}"' for k, v in annotations.items())
+
+    manifest = (
+        f"apiVersion: networking.k8s.io/v1\n"
+        f"kind: Ingress\n"
+        f"metadata:\n"
+        f"  name: zammad-ingress\n"
+        f"  namespace: {ns}\n"
+        f"  annotations:\n"
+        f"{annotations_str}\n"
+        f"spec:\n"
+        f"  ingressClassName: alb\n"
+        f"  tls:\n"
+        f"    - hosts:\n"
+        f"        - {host}\n"
+        f"      secretName: {safe_name}-tls\n"
+        f"  rules:\n"
+        f"    - host: {host}\n"
+        f"      http:\n"
+        f"        paths:\n"
+        f"          - path: /\n"
+        f"            pathType: ImplementationSpecific\n"
+        f"            backend:\n"
+        f"              service:\n"
+        f"                name: mcaas-zammad-nginx\n"
+        f"                port:\n"
+        f"                  number: 8080\n"
+    )
+    return manifest
+
+
+def deploy_ingress_and_certs(cfg: dict):
+    """Generate and apply Certificate and Ingress manifests for all services.
+
+    This function dynamically generates cert-manager Certificate resources
+    and ALB Ingress resources based on the client configuration, replacing
+    the need for static YAML files in aws/ and clients/<name>/ directories.
+
+    Prerequisites:
+        - cert-manager and Cloudflare DNS01 ClusterIssuer must be set up
+        - Services must be deployed (Helm charts) before ingress is created
+        - ACM certificate ARNs should be in cfg['aws']['acm_cert_arns']
+          (imported manually after cert-manager issues TLS certs)
+    """
+    logging.info("=" * 60)
+    logging.info("PHASE 3: Certificate & Ingress Configuration")
+    logging.info("=" * 60)
+
+    dry_run = globals().get("DRY_RUN", False)
+    domain = cfg["domain"]
+    ingress = cfg["ingress"]
+    acm_arns = cfg["aws"].get("acm_cert_arns", {})
+
+    # Service → namespace mapping for certificates
+    cert_services = {
+        "wazuh": cfg["namespaces"]["wazuh"],
+        "shuffle": cfg["namespaces"]["security-ops"],
+        "ciso": cfg["namespaces"]["grc"],
+        "zammad": cfg["namespaces"]["managed-it"],
+    }
+
+    # Host mapping for certificates
+    host_map = {
+        "wazuh": ingress["wazuh_host"],
+        "shuffle": ingress["shuffle_host"],
+        "ciso": ingress["ciso_host"],
+        "zammad": ingress["zammad_host"],
+    }
+
+    # --- Step 1: Apply Certificate manifests ---
+    logging.info("Applying cert-manager Certificate manifests...")
+    for service, namespace in cert_services.items():
+        host = host_map[service]
+        manifest = generate_certificate_manifest(service, namespace, host)
+        logging.info(f"  Certificate: {host} (ns={namespace})")
+        if dry_run:
+            logging.info(f"  Dry-run: would apply Certificate for {host}")
+        else:
+            result = run_command(
+                ["kubectl", "apply", "-f", "-"],
+                check=True,
+                input_data=manifest,
+            )
+            if result and result.returncode == 0:
+                logging.info(f"  ✓ Certificate for {host} applied")
+            else:
+                logging.warning(f"  ⚠ Certificate for {host} may not have been applied")
+
+    # Wait for certificates to be issued
+    if not dry_run:
+        logging.info("Waiting for certificates to be issued by cert-manager...")
+        for service, namespace in cert_services.items():
+            host = host_map[service]
+            safe_name = host.replace(".", "-")
+            logging.info(f"  Waiting for Certificate {safe_name}-tls in {namespace}...")
+            run_command(
+                [
+                    "kubectl",
+                    "wait",
+                    "--for=condition=ready",
+                    "certificate",
+                    f"{safe_name}-tls",
+                    "-n",
+                    namespace,
+                    "--timeout=300s",
+                ],
+                check=False,
+            )
+
+    # --- Step 2: Apply Ingress manifests ---
+    logging.info("Applying Ingress manifests...")
+
+    ingress_generators = {
+        "wazuh": generate_wazuh_ingress_manifest,
+        "shuffle": generate_shuffle_ingress_manifest,
+        "ciso": generate_ciso_ingress_manifest,
+        "zammad": generate_zammad_ingress_manifest,
+    }
+
+    for service, generator in ingress_generators.items():
+        manifest = generator(cfg)
+        host = host_map[service]
+        logging.info(f"  Ingress: {service} ({host})")
+        if dry_run:
+            logging.info(f"  Dry-run: would apply Ingress for {service}")
+        else:
+            result = run_command(
+                ["kubectl", "apply", "-f", "-"],
+                check=True,
+                input_data=manifest,
+            )
+            if result and result.returncode == 0:
+                logging.info(f"  ✓ Ingress for {service} applied")
+            else:
+                logging.warning(f"  ⚠ Ingress for {service} may not have been applied")
+
+    # --- Step 3: ACM certificate import reminder ---
+    if not acm_arns:
+        logging.warning("=" * 60)
+        logging.warning("IMPORTANT: No ACM certificate ARNs configured!")
+        logging.warning("After cert-manager issues TLS certificates, you must:")
+        logging.warning("  1. Export the TLS secret from Kubernetes")
+        logging.warning("  2. Import it into AWS ACM")
+        logging.warning(
+            "  3. Add the ACM ARNs to your client config.yaml under aws.acm_cert_arns"
+        )
+        logging.warning(
+            "  4. Re-run this phase or manually update the Ingress annotations"
+        )
+        logging.warning("=" * 60)
+    else:
+        missing = [
+            s for s in ["wazuh", "shuffle", "ciso", "zammad"] if not acm_arns.get(s)
+        ]
+        if missing:
+            logging.warning(
+                f"ACM ARNs missing for: {', '.join(missing)}. "
+                f"Ingress annotations for these services will not include certificate-arn."
+            )
+        present = [s for s in ["wazuh", "shuffle", "ciso", "zammad"] if acm_arns.get(s)]
+        if present:
+            logging.info(f"ACM ARNs configured for: {', '.join(present)}")
+
+    logging.info("Certificate & Ingress configuration complete!")
+
+
+# ============================================================
 # Main Deployment Logic
 # ============================================================
 
@@ -1455,11 +1805,11 @@ def deploy_infrastructure(cfg: dict, cluster_name: str | None, region: str | Non
 
     # Step 6b: Set up Cloudflare DNS01 (if token provided)
     if args.cloudflare_token:
-        setup_cloudflare_dns01(args.cloudflare_token)
+        setup_cloudflare_dns01(args.cloudflare_token, cfg["aws"]["letsencrypt_email"])
     else:
         logging.info(
             "Cloudflare DNS01 not configured. Pass --cloudflare-token to enable "
-            "wildcard certificates for *.app.skyddex.com."
+            "wildcard certificates for the configured domain."
         )
 
     # Step 7: Apply AWS StorageClasses
@@ -1688,7 +2038,7 @@ def generate_environment_summary(cfg: dict):
     prefix = cfg["prefix"]
     ns = cfg["namespaces"]
     env_prefix = cfg["env_prefix"]
-    domain = cfg.get("domain", "app.skyddex.com")
+    domain = cfg.get("domain", "testcustomer.socom.co.il")
     ingress = cfg.get("ingress", {})
     client_name = cfg.get("client_name") or "default"
     dry_run = globals().get("DRY_RUN", False)
@@ -1943,6 +2293,8 @@ Examples:
   python deploy-aws.py --client aws               # Use AWS client config
   python deploy-aws.py --skip-cluster             # Skip EKS cluster creation
   python deploy-aws.py --skip-infrastructure      # Skip AWS infra setup (just apps)
+  python deploy-aws.py --skip-ingress             # Skip cert and ingress setup
+  python deploy-aws.py --only-ingress             # Only apply certs and ingress
   python deploy-aws.py --tear-down                # Delete the EKS cluster
   python deploy-aws.py --cloudflare-token TOKEN   # Enable Cloudflare DNS01
         """,
@@ -1967,6 +2319,16 @@ Examples:
         "--skip-infrastructure",
         action="store_true",
         help="Skip AWS infrastructure setup (cluster + add-ons already exist)",
+    )
+    parser.add_argument(
+        "--skip-ingress",
+        action="store_true",
+        help="Skip certificate and ingress configuration",
+    )
+    parser.add_argument(
+        "--only-ingress",
+        action="store_true",
+        help="Only apply certificate and ingress manifests (skip infrastructure and apps)",
     )
     parser.add_argument(
         "--tear-down",
@@ -2036,7 +2398,18 @@ Examples:
             check_kubectl_connectivity()
 
         # Phase 2: Application Deployment
-        deploy_applications(cfg)
+        if not args.only_ingress:
+            deploy_applications(cfg)
+        else:
+            logging.info("Skipping application deployment (--only-ingress)")
+
+        # Phase 3: Certificate & Ingress Configuration
+        if not args.skip_ingress:
+            deploy_ingress_and_certs(cfg)
+        else:
+            logging.info(
+                "Skipping certificate and ingress configuration (--skip-ingress)"
+            )
 
         # Generate summary
         generate_environment_summary(cfg)

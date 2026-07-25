@@ -1,0 +1,10 @@
+{
+  "yaml.schemaStore.enable": false,
+  "yaml.customTags": [
+    "!reference sequence"
+  ],
+  "files.associations": {
+    "**/values/*.yaml": "helm-values",
+    "**/values.yaml": "helm-values"
+  }
+}

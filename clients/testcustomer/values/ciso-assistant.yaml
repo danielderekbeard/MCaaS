@@ -1,0 +1,17 @@
+postgresql:
+  enabled: false
+global:
+  domain: ciso.demo.mcaas.example.com
+backend:
+  config:
+    databaseType: externalPgsql
+    djangoSecretKey: ""
+    djangoExistingSecretKey: "demo-ciso-secret"
+externalPgsql:
+  host: "demo-postgresql.demo-managed-it.svc.cluster.local"
+  port: 5432
+  user: "postgres"
+  existingSecret: "demo-postgresql-secret"
+  database: "ciso-assistant"
+ingress:
+  enabled: true

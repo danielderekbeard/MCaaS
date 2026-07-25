@@ -47,3 +47,33 @@ client:
   ingress:
     zammad_host: ""     # e.g., "zammad.acme.example.com"
     ciso_host: ""       # e.g., "ciso.acme.example.com"
+    shuffle_host: ""    # e.g., "shuffle.acme.example.com"
+    wazuh_host: ""      # e.g., "wazuh.acme.example.com"
+
+  # AWS-specific settings (used by deploy-aws.py for EKS deployments)
+  # Remove this section for non-AWS deployments.
+  aws:
+    cluster_name: ""    # e.g., "acme-eks"
+    region: ""          # e.g., "eu-west-1"
+    node_group_workers:
+      instance_type: "m5.xlarge"
+      desired_capacity: 4
+      min_size: 3
+      max_size: 8
+    node_group_monitoring:
+      instance_type: "m5.2xlarge"
+      desired_capacity: 2
+      min_size: 1
+      max_size: 4
+
+    # ACM certificate ARNs for each service (import from K8s TLS secrets into AWS ACM)
+    # These are required for ALB Ingress to serve HTTPS traffic.
+    # After cert-manager issues TLS certs, export and import to ACM, then add ARNs here.
+    acm_cert_arns:
+      wazuh: ""
+      shuffle: ""
+      ciso: ""
+      zammad: ""
+
+    # Let's Encrypt registration email for cert-manager
+    letsencrypt_email: ""
