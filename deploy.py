@@ -1202,6 +1202,287 @@ def create_secrets(cfg: dict):
         )
 
 
+def generate_environment_summary(cfg: dict):
+    """Generate an environment-specific summary file with secrets, URLs, and credentials.
+
+    After a successful deployment, this function collects all the deployed
+    service information — Kubernetes secrets, ingress URLs, internal service
+    addresses, default credentials, and port-forward commands — and writes a
+    Markdown file that operators can use as a quick-reference for accessing
+    the stack.
+
+    The file is written to ``<PROJECT_ROOT>/deploy-summary-<prefix>.md`` and
+    is also logged to the console for immediate visibility.
+
+    In dry-run mode, the summary is still generated (using env-var values or
+    placeholder markers) so operators can review what *would* be deployed.
+    """
+    import base64
+    from datetime import datetime, timezone
+
+    prefix = cfg["prefix"]
+    ns = cfg["namespaces"]
+    env_prefix = cfg["env_prefix"]
+    domain = cfg.get("domain", "mcaas.example.com")
+    ingress = cfg.get("ingress", {})
+    client_name = cfg.get("client_name") or "default"
+    dry_run = globals().get("DRY_RUN", False)
+
+    # --- Collect secret values from the cluster (or env vars) ---
+    def _get_secret_value(secret_name, namespace, key):
+        """Retrieve a secret value from the cluster; return placeholder on failure."""
+        if dry_run:
+            return f"<{key} (dry-run: not retrieved)>"
+        try:
+            result = subprocess.run(
+                [
+                    "kubectl",
+                    "get",
+                    "secret",
+                    secret_name,
+                    "-n",
+                    namespace,
+                    "-o",
+                    f"jsonpath={{.data.{key}}}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return base64.b64decode(result.stdout.strip()).decode()
+            return f"<{key} (not found)>"
+        except Exception:
+            return f"<{key} (error retrieving)>"
+
+    postgres_pw = os.environ.get(
+        f"{env_prefix}_POSTGRES_PASSWORD"
+    ) or _get_secret_value(
+        f"{prefix}-postgresql-secret", ns["managed-it"], "postgres-password"
+    )
+    opensearch_pw = os.environ.get(
+        f"{env_prefix}_OPENSEARCH_PASSWORD"
+    ) or _get_secret_value(
+        f"{prefix}-opensearch-secret", ns["security-ops"], "opensearch-password"
+    )
+    redis_pw = os.environ.get(f"{env_prefix}_REDIS_PASSWORD") or _get_secret_value(
+        f"{prefix}-zammad-redis-pass", ns["managed-it"], "redis-password"
+    )
+    django_secret = os.environ.get(
+        f"{env_prefix}_DJANGO_SECRET_KEY"
+    ) or _get_secret_value(f"{prefix}-ciso-secret", ns["grc"], "django-secret-key")
+
+    # --- Build ingress URLs ---
+    zammad_host = ingress.get("zammad_host", f"zammad.{domain}")
+    ciso_host = ingress.get("ciso_host", f"ciso.{domain}")
+    zammad_url = f"https://{zammad_host}"
+    ciso_url = f"https://{ciso_host}"
+
+    # --- Internal service addresses ---
+    pg_host = f"{prefix}-postgresql.{ns['managed-it']}.svc.cluster.local"
+    os_host = f"{prefix}-opensearch.{ns['security-ops']}.svc.cluster.local"
+    shuffle_backend = f"shuffle.{ns['security-ops']}.svc.cluster.local"
+    zammad_redis = f"{prefix}-zammad-redis.{ns['managed-it']}.svc.cluster.local"
+
+    # --- Timestamp ---
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    # --- Build the Markdown summary ---
+    lines = [
+        f"# MCaaS Deployment Summary",
+        "",
+        f"| Field | Value |",
+        f"|-------|-------|",
+        f"| **Client** | `{client_name}` |",
+        f"| **Prefix** | `{prefix}` |",
+        f"| **Domain** | `{domain}` |",
+        f"| **Generated** | {now} |",
+        f"| **Mode** | {'Dry-run (no changes applied)' if dry_run else 'Live deployment'} |",
+        "",
+        "---",
+        "",
+        "## Web Interfaces (Ingress)",
+        "",
+        "| Service | URL | Default Credentials |",
+        "|---------|-----|---------------------|",
+        f"| **Zammad** (Ticketing) | [{zammad_url}]({zammad_url}) | `admin` / set on first login |",
+        f"| **CISO Assistant** (GRC) | [{ciso_url}]({ciso_url}) | `admin` / set on first login |",
+        "",
+        "## Web Interfaces (Port-Forward Required)",
+        "",
+        "These services are not exposed via ingress and require `kubectl port-forward`:",
+        "",
+        "### Wazuh Dashboard",
+        "",
+        "```bash",
+        f"kubectl port-forward svc/wazuh-dashboard -n {ns['wazuh']} 8443:5601",
+        "```",
+        "",
+        "- **URL:** <https://localhost:8443>",
+        "- **Username:** `admin`",
+        "- **Password:** Change from default `MYPASSWORD_` — see Wazuh secret below",
+        "",
+        "### Shuffle (SOAR)",
+        "",
+        "```bash",
+        f"kubectl port-forward svc/shuffle -n {ns['security-ops']} 3000:80",
+        "```",
+        "",
+        "- **URL:** <http://localhost:3000>",
+        "- **Authentication:** OpenID / configured at first setup",
+        "",
+        "---",
+        "",
+        "## Internal Services (Cluster-Only)",
+        "",
+        "| Service | Host | Port | Notes |",
+        "|---------|------|------|-------|",
+        f"| **PostgreSQL** | `{pg_host}` | 5432 | Primary database |",
+        f"| **OpenSearch** | `{os_host}` | 9200 | REST API (HTTPS) |",
+        f"| **Zammad Redis** | `{zammad_redis}` | 6379 | Session/cache store |",
+        f"| **Shuffle Backend** | `{shuffle_backend}` | 80 | SOAR engine |",
+        "",
+        "---",
+        "",
+        "## Kubernetes Secrets",
+        "",
+        f"| Secret | Namespace | Keys |",
+        f"|--------|-----------|------|",
+        f"| `{prefix}-postgresql-secret` | `{ns['managed-it']}` | `postgres-password`, `password` |",
+        f"| `{prefix}-opensearch-secret` | `{ns['security-ops']}` | `opensearch-password`, `SHUFFLE_OPENSEARCH_PASSWORD` |",
+        f"| `{prefix}-zammad-redis-pass` | `{ns['managed-it']}` | `redis-password` |",
+        f"| `{prefix}-postgresql-secret` | `{ns['grc']}` | `postgres-password`, `password` (for CISO Assistant) |",
+        f"| `{prefix}-ciso-secret` | `{ns['grc']}` | `django-secret-key` |",
+        "",
+        "---",
+        "",
+        "## Credentials",
+        "",
+        "### PostgreSQL",
+        "",
+        "- **Host:** `{pg_host}:5432`",
+        "- **Username:** `postgres`",
+        f"- **Password:** `{postgres_pw}`",
+        f"- **Database names:** `mcaas_db` (default), `zammad`, `ciso-assistant`",
+        "",
+        "### OpenSearch",
+        "",
+        "- **Host:** `{os_host}:9200`",
+        "- **Username:** `admin`",
+        f"- **Password:** `{opensearch_pw}`",
+        "",
+        "### Zammad Redis",
+        "",
+        "- **Host:** `{zammad_redis}:6379`",
+        f"- **Password:** `{redis_pw}`",
+        "",
+        "### Wazuh Dashboard",
+        "",
+        f"- **Username:** `admin`",
+        "- **Default password:** `MYPASSWORD_` — **change this immediately** after first login",
+        "- **Port-forward:** `kubectl port-forward svc/wazuh-dashboard -n "
+        f"{ns['wazuh']} 8443:5601`",
+        "",
+        "### CISO Assistant",
+        "",
+        f"- **Django Secret Key:** `{django_secret}`",
+        f"- **PostgreSQL connection:** uses `{prefix}-postgresql-secret` in `{ns['grc']}` namespace",
+        "",
+        "### Shuffle",
+        "",
+        f"- **OpenSearch connection:** uses `{prefix}-opensearch-secret` (key `SHUFFLE_OPENSEARCH_PASSWORD`)",
+        f"- **OpenSearch URL:** `{os_host}:9200`",
+        "",
+        "---",
+        "",
+        "## Namespaces",
+        "",
+        f"| Purpose | Namespace |",
+        f"|---------|-----------|",
+        f"| Managed IT / Zammad / PostgreSQL / Redis | `{ns['managed-it']}` |",
+        f"| Security Ops / OpenSearch / Shuffle | `{ns['security-ops']}` |",
+        f"| GRC / CISO Assistant | `{ns['grc']}` |",
+        f"| Wazuh (Manager + Dashboard + Indexer) | `{ns['wazuh']}` |",
+        "",
+        "---",
+        "",
+        "## Helm Releases",
+        "",
+        f"| Release | Chart | Namespace |",
+        f"|---------|-------|-----------|",
+        f"| `{prefix}-postgresql` | `bitnami/postgresql` | `{ns['managed-it']}` |",
+        f"| `{prefix}-opensearch` | `opensearch/opensearch` | `{ns['security-ops']}` |",
+        f"| `{prefix}-shuffle` | `oci://ghcr.io/shuffle/charts/shuffle` | `{ns['security-ops']}` |",
+        f"| `{prefix}-zammad` | `oci://ghcr.io/zammad/charts/zammad` | `{ns['managed-it']}` |",
+        f"| `{prefix}-ciso` | `oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant` | `{ns['grc']}` |",
+        "",
+        "---",
+        "",
+        "## Port-Forward Quick Reference",
+        "",
+        "```bash",
+        "# Zammad (if ingress is disabled)",
+        f"# kubectl port-forward svc/{prefix}-zammad -n {ns['managed-it']} 8080:8080",
+        "",
+        "# CISO Assistant (if ingress is disabled)",
+        f"# kubectl port-forward svc/{prefix}-ciso -n {ns['grc']} 8443:8443",
+        "",
+        "# Wazuh Dashboard",
+        f"kubectl port-forward svc/wazuh-dashboard -n {ns['wazuh']} 8443:5601",
+        "",
+        "# Shuffle",
+        f"kubectl port-forward svc/shuffle -n {ns['security-ops']} 3000:80",
+        "",
+        "# PostgreSQL (debugging)",
+        f"kubectl port-forward svc/{prefix}-postgresql -n {ns['managed-it']} 5432:5432",
+        "",
+        "# OpenSearch (debugging)",
+        f"kubectl port-forward svc/{prefix}-opensearch -n {ns['security-ops']} 9200:9200",
+        "```",
+        "",
+        "---",
+        "",
+        f"_This file was auto-generated by `deploy.py` on {now}._",
+        "",
+    ]
+
+    summary_text = "\n".join(lines)
+
+    # --- Write the file ---
+    summary_file = PROJECT_ROOT / f"deploy-summary-{prefix}.md"
+    summary_file.write_text(summary_text, encoding="utf-8")
+    logging.info(f"Deployment summary written to {summary_file}")
+
+    # --- Print to console for immediate visibility ---
+    print("\n" + "=" * 72)
+    print("  MCaaS DEPLOYMENT SUMMARY")
+    print("=" * 72)
+    print()
+    print(f"  Client:      {client_name}")
+    print(f"  Prefix:      {prefix}")
+    print(f"  Domain:      {domain}")
+    print()
+    print("  Web Interfaces:")
+    print(f"    Zammad:          {zammad_url}")
+    print(f"    CISO Assistant:  {ciso_url}")
+    print(
+        f"    Wazuh Dashboard: kubectl port-forward svc/wazuh-dashboard -n {ns['wazuh']} 8443:5601"
+    )
+    print(
+        f"    Shuffle:         kubectl port-forward svc/shuffle -n {ns['security-ops']} 3000:80"
+    )
+    print()
+    print(f"  Secrets & Credentials:")
+    print(f"    PostgreSQL password: {postgres_pw}")
+    print(f"    OpenSearch password: {opensearch_pw}")
+    print(f"    Redis password:      {redis_pw}")
+    print(f"    Django secret key:   {django_secret}")
+    print(f"    Wazuh default:       admin / MYPASSWORD_  (change immediately!)")
+    print()
+    print(f"  Full summary saved to: {summary_file}")
+    print("=" * 72 + "\n")
+
+
 def _create_database(pod_name, namespace, db_name, secret_name, secret_key):
     """Create a database in the PostgreSQL instance running in the cluster.
 
@@ -1537,6 +1818,9 @@ def main():
         wait_for_resource(ns["grc"], f"{prefix}-ciso")
 
         logging.info("Deployment complete!")
+
+        # Generate environment-specific summary file with secrets, URLs & credentials
+        generate_environment_summary(cfg)
 
     except Exception as e:
         logging.error(f"An error occurred during deployment: {e}")
