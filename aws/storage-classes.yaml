@@ -1,0 +1,49 @@
+# AWS StorageClasses for EKS EBS CSI Driver
+# These replace the k3s local-path provisioner used in the original MCaaS deployment.
+
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  iopsPerGB: "50"
+  fsType: ext4
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: io1
+provisioner: ebs.csi.aws.com
+parameters:
+  type: io1
+  iopsPerGB: "50"
+  fsType: ext4
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+
+---
+# StorageClass specifically for Wazuh (replaces the local-path based wazuh-storage)
+# This is applied dynamically by deploy-aws.py after the Wazuh kustomize deployment,
+# but is also defined here for reference and manual application.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: wazuh-storage
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  iopsPerGB: "50"
+  fsType: ext4
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

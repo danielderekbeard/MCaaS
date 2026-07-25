@@ -1,0 +1,138 @@
+# MCaaS EKS Cluster Configuration
+# Usage: eksctl create cluster -f aws/eksctl-cluster.yaml
+#
+# This creates a production-ready EKS cluster with:
+# - Managed node groups across 2 AZs
+# - EBS CSI driver addon for persistent volumes
+# - VPC CNI addon for pod networking
+# - IAM service accounts for AWS Load Balancer Controller and EBS CSI driver
+# - Appropriate security groups and networking
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: mcaas-eks
+  region: us-east-1
+  version: "1.29"
+  tags:
+    Project: mcaas
+    Environment: production
+    ManagedBy: eksctl
+
+availabilityZones:
+  - us-east-1a
+  - us-east-1b
+
+vpc:
+  cidr: 10.0.0.0/16
+  nat:
+    gateway: HighlyAvailable
+  clusterEndpoints:
+    publicAccess: true
+    privateAccess: true
+
+managedNodeGroups:
+  - name: mcaas-workers
+    instanceType: m5.xlarge
+    desiredCapacity: 4
+    minSize: 3
+    maxSize: 8
+    volumeSize: 100
+    volumeType: gp3
+    volumeEncrypted: true
+    labels:
+      role: mcaas-worker
+    tags:
+      Project: mcaas
+      Environment: production
+    iam:
+      withAddonPolicies:
+        ebs: true
+        autoScaler: true
+        cloudWatch: true
+    securityGroups:
+      attachIDs: []
+    privateNetworking: true
+
+  - name: mcaas-monitoring
+    instanceType: m5.2xlarge
+    desiredCapacity: 2
+    minSize: 1
+    maxSize: 4
+    volumeSize: 200
+    volumeType: gp3
+    volumeEncrypted: true
+    labels:
+      role: mcaas-monitoring
+    tags:
+      Project: mcaas
+      Environment: production
+    iam:
+      withAddonPolicies:
+        ebs: true
+        autoScaler: true
+        cloudWatch: true
+    privateNetworking: true
+
+# EBS CSI Driver addon - required for persistent volumes on EKS
+addons:
+  - name: aws-ebs-csi-driver
+    wellKnownPolicies:
+      ebsCSIController: true
+    attachPolicy:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Action:
+            - ec2:CreateSnapshot
+            - ec2:AttachVolume
+            - ec2:DetachVolume
+            - ec2:ModifyVolume
+            - ec2:DescribeVolumes
+            - ec2:DescribeSnapshots
+            - ec2:DescribeAvailabilityZones
+            - ec2:CreateTags
+            - ec2:DeleteTags
+            - ec2:DescribeInstances
+            - ec2:CreateVolume
+            - ec2:DeleteVolume
+            - ec2:ModifyVolume
+            - kms:Decrypt
+            - kms:GenerateDataKey
+            - kms:CreateGrant
+          Resource: "*"
+
+  - name: vpc-cni
+    wellKnownPolicies:
+      autoAttachAWSIdentity: true
+
+  - name: coredns
+    version: auto
+
+  - name: kube-proxy
+    version: auto
+
+# IAM Service Accounts
+iam:
+  withOIDC: true
+  serviceAccounts:
+    - metadata:
+        name: aws-load-balancer-controller
+        namespace: kube-system
+      wellKnownPolicies:
+        awsLoadBalancerController: true
+    - metadata:
+        name: ebs-csi-controller-sa
+        namespace: kube-system
+      wellKnownPolicies:
+        ebsCSIController: true
+
+cloudWatch:
+  clusterLogging:
+    enableTypes:
+      - authenticator
+      - api
+      - audit
+      - scheduler
+      - controllerManager
