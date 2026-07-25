@@ -14,6 +14,10 @@ extraEnvs:
   - name: DISABLE_SECURITY_PLUGIN
     value: "false"
 
+extraEnvFrom:
+  - secretRef:
+      name: mcaas-opensearch-secret
+
 securityConfig:
   enabled: true
 
