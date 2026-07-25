@@ -26,6 +26,7 @@ Usage:
   python deploy-aws.py --skip-cluster            # Skip cluster creation
   python deploy-aws.py --skip-infrastructure     # Skip AWS infra setup
   python deploy-aws.py --tear-down               # Destroy the EKS cluster
+  python deploy-aws.py --cloudflare-token TOKEN   # Enable Cloudflare DNS01
 """
 
 import os
@@ -62,7 +63,7 @@ IS_POSIX = PLATFORM in ("Linux", "Darwin")
 
 # Default EKS cluster configuration
 DEFAULT_EKS_CLUSTER = "mcaas-eks"
-DEFAULT_EKS_REGION = "us-east-1"
+DEFAULT_EKS_REGION = "eu-west-1"
 EKSCTL_CLUSTER_CONFIG = AWS_DIR / "eksctl-cluster.yaml"
 
 
@@ -75,12 +76,12 @@ AWS_CONFIG = {
         "grc": "grc",
         "wazuh": "wazuh",
     },
-    "domain": "mcaas.example.com",
+    "domain": "app.skyddex.com",
     "database_name": "mcaas_db",
     "wazuh_version": "4.14.6",
     "ingress": {
-        "zammad_host": "zammad.mcaas.example.com",
-        "ciso_host": "ciso.mcaas.example.com",
+        "zammad_host": "zammad.app.skyddex.com",
+        "ciso_host": "ciso.app.skyddex.com",
     },
 }
 
@@ -508,13 +509,17 @@ def install_ebs_csi_driver(cluster_name: str | None = None, region: str | None =
     )
 
 
-def install_aws_load_balancer_controller():
+def install_aws_load_balancer_controller(
+    cluster_name: str | None = None, region: str | None = None
+):
     """Install the AWS Load Balancer Controller using Helm.
 
     This controller is required for creating AWS Application Load Balancers
     and Network Load Balancers for Kubernetes Ingress and LoadBalancer services.
     """
     dry_run = globals().get("DRY_RUN", False)
+    cluster = cluster_name or DEFAULT_EKS_CLUSTER
+    r = region or DEFAULT_EKS_REGION
 
     logging.info("Installing AWS Load Balancer Controller...")
 
@@ -555,6 +560,26 @@ def install_aws_load_balancer_controller():
         logging.info("Dry-run: would install AWS Load Balancer Controller via Helm")
         return
 
+    # Get VPC ID for the cluster
+    vpc_result = run_command(
+        [
+            "aws",
+            "eks",
+            "describe-cluster",
+            "--name",
+            cluster,
+            "--region",
+            r,
+            "--query",
+            "cluster.resourcesVpcConfig.vpcId",
+            "--output",
+            "text",
+        ],
+        check=True,
+    )
+    vpc_id = vpc_result.stdout.strip()
+    logging.info(f"Cluster VPC ID: {vpc_id}")
+
     # Install the AWS Load Balancer Controller
     run_command(
         [
@@ -566,15 +591,15 @@ def install_aws_load_balancer_controller():
             "--namespace",
             "kube-system",
             "--set",
-            "clusterName=mcaas-eks",
+            f"clusterName={cluster}",
             "--set",
             "serviceAccount.create=true",
             "--set",
             "serviceAccount.name=aws-load-balancer-controller",
             "--set",
-            "region=us-east-1",
+            f"region={r}",
             "--set",
-            "vpcId=$(aws eks describe-cluster --name mcaas-eks --region us-east-1 --query 'cluster.resourcesVpcConfig.vpcId' --output text)",
+            f"vpcId={vpc_id}",
             "--wait",
             "--timeout",
             "5m",
@@ -588,7 +613,7 @@ def install_cert_manager():
     """Install cert-manager for TLS certificate management.
 
     On AWS EKS, cert-manager can be used with Let's Encrypt via HTTP01
-    or DNS01 challenges (Route53) to automatically provision TLS certs.
+    or DNS01 challenges (Cloudflare) to automatically provision TLS certs.
     """
     dry_run = globals().get("DRY_RUN", False)
 
@@ -638,6 +663,190 @@ def install_cert_manager():
         check=True,
     )
     logging.info("cert-manager installed.")
+    logging.info("NOTE: For Cloudflare DNS01 challenges, create the API token secret:")
+    logging.info(
+        "  kubectl create secret generic cloudflare-api-token-secret"
+        " --namespace cert-manager"
+        " --from-literal=api-token=<YOUR_CLOUDFLARE_API_TOKEN>"
+    )
+    logging.info(
+        "Then uncomment the letsencrypt-cloudflare ClusterIssuer in"
+        " aws/ingress-and-cert.yaml and apply it."
+    )
+
+
+def setup_cloudflare_dns01(api_token: str):
+    """Set up Cloudflare DNS01 challenge support for cert-manager.
+
+    Creates a Kubernetes Secret with the Cloudflare API token in the
+    cert-manager namespace, then applies the letsencrypt-cloudflare
+    ClusterIssuer from aws/ingress-and-cert.yaml.
+
+    This enables automatic wildcard certificate provisioning for
+    *.app.skyddex.com via Let's Encrypt DNS01 challenges.
+    """
+    dry_run = globals().get("DRY_RUN", False)
+
+    if dry_run:
+        logging.info(
+            "Dry-run: would create Cloudflare API token secret and ClusterIssuer"
+        )
+        return
+
+    logging.info("Setting up Cloudflare DNS01 challenge support...")
+
+    # Create the Cloudflare API token Secret
+    secret_cmd = [
+        "kubectl",
+        "create",
+        "secret",
+        "generic",
+        "cloudflare-api-token-secret",
+        "--namespace",
+        "cert-manager",
+        f"--from-literal=api-token={api_token}",
+        "--dry-run=client",
+        "-o",
+        "yaml",
+    ]
+    result = run_command(secret_cmd, check=False)
+    if result is not None and result.returncode == 0:
+        apply_cmd = [
+            "kubectl",
+            "apply",
+            "-f",
+            "-",
+        ]
+        run_command(
+            apply_cmd,
+            check=True,
+            input_data=result.stdout,
+        )
+        logging.info("Cloudflare API token secret created in cert-manager namespace.")
+    else:
+        logging.warning(
+            "Failed to create Cloudflare API token secret. "
+            "You may need to create it manually."
+        )
+        return
+
+    # Wait briefly for cert-manager to be ready before applying ClusterIssuer
+    logging.info("Waiting for cert-manager webhook to be ready...")
+    run_command(
+        [
+            "kubectl",
+            "wait",
+            "--for=condition=available",
+            "--namespace",
+            "cert-manager",
+            "deployment/cert-manager-webhook",
+            "--timeout=120s",
+        ],
+        check=False,
+    )
+
+    # Read and uncomment the Cloudflare ClusterIssuer from ingress-and-cert.yaml
+    ingress_file = AWS_DIR / "ingress-and-cert.yaml"
+    if not ingress_file.exists():
+        logging.error(f"Ingress/cert file not found: {ingress_file}")
+        return
+
+    content = ingress_file.read_text(encoding="utf-8")
+
+    # Check if the Cloudflare ClusterIssuer is already uncommented
+    if "name: letsencrypt-cloudflare" in content and not content.strip().startswith(
+        "#"
+    ):
+        # Check if it's an active (uncommented) resource
+        lines = content.split("\n")
+        in_cloudflare_block = False
+        uncommented = False
+        for line in lines:
+            if "name: letsencrypt-cloudflare" in line and not line.strip().startswith(
+                "#"
+            ):
+                uncommented = True
+                break
+
+        if uncommented:
+            logging.info("Cloudflare ClusterIssuer already active, applying...")
+            run_command(
+                ["kubectl", "apply", "-f", str(ingress_file)],
+                check=True,
+            )
+            logging.info("Cloudflare ClusterIssuer applied.")
+            return
+
+    # Uncomment the Cloudflare ClusterIssuer block
+    # Lines starting with "# " within the block need the "# " prefix removed
+    uncommented_lines = []
+    in_cloudflare_block = False
+    block_indent = None
+
+    for line in content.split("\n"):
+        stripped = line.strip()
+
+        # Detect start of the commented Cloudflare block
+        if (
+            stripped.startswith("# apiVersion: cert-manager.io/v1")
+            and "letsencrypt-cloudflare" in content
+        ):
+            # Look ahead to see if this is the cloudflare block
+            pass
+
+        if stripped == "# ---":
+            # Check if next non-empty line starts cloudflare block
+            # We'll handle this differently
+            pass
+
+        # Simple approach: uncomment lines that are part of the cloudflare block
+        # The block is delimited by "# ---" and contains "letsencrypt-cloudflare"
+        if "# name: letsencrypt-cloudflare" in stripped:
+            in_cloudflare_block = True
+
+        if in_cloudflare_block:
+            if stripped.startswith("#"):
+                # Remove the "# " prefix (or just "#" if no space)
+                if stripped.startswith("# "):
+                    uncommented_lines.append(line.replace("# ", "", 1))
+                elif stripped.startswith("#"):
+                    uncommented_lines.append(line.replace("#", "", 1).rstrip())
+            else:
+                uncommented_lines.append(line)
+
+            # End of block: blank line or next "---" after content
+            if stripped and not stripped.startswith("#") and stripped != "---":
+                pass  # still in block
+        else:
+            uncommented_lines.append(line)
+
+        if in_cloudflare_block and stripped == "---" and line.strip() == "---":
+            in_cloudflare_block = False
+
+    # Write a temporary file with the uncommented content
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".yaml", delete=False, encoding="utf-8"
+    ) as tmp:
+        tmp.write("\n".join(uncommented_lines))
+        tmp_path = tmp.name
+
+    try:
+        logging.info("Applying Cloudflare ClusterIssuer...")
+        run_command(
+            ["kubectl", "apply", "-f", tmp_path],
+            check=True,
+        )
+        logging.info("Cloudflare ClusterIssuer applied successfully.")
+        logging.info(
+            "You can now use 'cert-manager.io/cluster-issuer: letsencrypt-cloudflare' "
+            "in your Ingress annotations for wildcard certificates on *.app.skyddex.com."
+        )
+    finally:
+        import os
+
+        os.unlink(tmp_path)
 
 
 def apply_aws_storage_classes():
@@ -1239,10 +1448,19 @@ def deploy_infrastructure(cfg: dict, cluster_name: str | None, region: str | Non
     install_ebs_csi_driver(cluster_name, region)
 
     # Step 5: Install AWS Load Balancer Controller
-    install_aws_load_balancer_controller()
+    install_aws_load_balancer_controller(cluster_name, region)
 
     # Step 6: Install cert-manager
     install_cert_manager()
+
+    # Step 6b: Set up Cloudflare DNS01 (if token provided)
+    if args.cloudflare_token:
+        setup_cloudflare_dns01(args.cloudflare_token)
+    else:
+        logging.info(
+            "Cloudflare DNS01 not configured. Pass --cloudflare-token to enable "
+            "wildcard certificates for *.app.skyddex.com."
+        )
 
     # Step 7: Apply AWS StorageClasses
     apply_aws_storage_classes()
@@ -1470,7 +1688,7 @@ def generate_environment_summary(cfg: dict):
     prefix = cfg["prefix"]
     ns = cfg["namespaces"]
     env_prefix = cfg["env_prefix"]
-    domain = cfg.get("domain", "mcaas.example.com")
+    domain = cfg.get("domain", "app.skyddex.com")
     ingress = cfg.get("ingress", {})
     client_name = cfg.get("client_name") or "default"
     dry_run = globals().get("DRY_RUN", False)
@@ -1726,6 +1944,7 @@ Examples:
   python deploy-aws.py --skip-cluster             # Skip EKS cluster creation
   python deploy-aws.py --skip-infrastructure      # Skip AWS infra setup (just apps)
   python deploy-aws.py --tear-down                # Delete the EKS cluster
+  python deploy-aws.py --cloudflare-token TOKEN   # Enable Cloudflare DNS01
         """,
     )
     parser.add_argument(
@@ -1753,6 +1972,12 @@ Examples:
         "--tear-down",
         action="store_true",
         help="Delete the EKS cluster and all associated resources",
+    )
+    parser.add_argument(
+        "--cloudflare-token",
+        metavar="TOKEN",
+        default=None,
+        help="Cloudflare API token for DNS01 challenges (enables letsencrypt-cloudflare issuer)",
     )
     parser.add_argument(
         "--cluster-name",

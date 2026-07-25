@@ -19,7 +19,7 @@ zammad:
       cert-manager.io/cluster-issuer: letsencrypt-prod
     tls: true
     hosts:
-      - name: zammad.mcaas.example.com
+      - name: zammad.app.skyddex.com
 
   redis:
     auth:

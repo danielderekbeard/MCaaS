@@ -5,7 +5,7 @@
 client:
   name: aws
   prefix: mcaas
-  domain: mcaas.example.com  # Change to your actual domain
+  domain: app.skyddex.com  # Cloudflare domain
   database_name: mcaas_db
 
   # Namespace configuration (prefixed with client prefix by default)
@@ -20,8 +20,8 @@ client:
 
   # Ingress configuration for AWS ALB
   ingress:
-    zammad_host: zammad.mcaas.example.com   # Change to your actual domain
-    ciso_host: ciso.mcaas.example.com       # Change to your actual domain
+    zammad_host: zammad.app.skyddex.com
+    ciso_host: ciso.app.skyddex.com
 
   # AWS-specific settings (used by deploy-aws.py)
   aws:

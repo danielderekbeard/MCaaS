@@ -13,9 +13,9 @@ spec:
   controller: ingress.k8s.aws/alb
 
 ---
-# ClusterIssuer for Let's Encrypt via cert-manager
-# Configure with your Route53 hosted zone and email address before applying.
-# This replaces the self-signed certificates used in the k3s deployment.
+# ClusterIssuer for Let's Encrypt via cert-manager (HTTP01 challenge)
+# Works out of the box with the ALB Ingress Controller.
+# Replace the email address with your own.
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
@@ -23,7 +23,7 @@ metadata:
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: admin@mcaas.example.com  # CHANGE THIS
+    email: admin@skyddex.com
     privateKeySecretRef:
       name: letsencrypt-prod
     solvers:
@@ -40,7 +40,7 @@ metadata:
 spec:
   acme:
     server: https://acme-staging-v02.api.letsencrypt.org/directory
-    email: admin@mcaas.example.com  # CHANGE THIS
+    email: admin@skyddex.com
     privateKeySecretRef:
       name: letsencrypt-staging
     solvers:
@@ -49,21 +49,31 @@ spec:
             class: alb
 
 ---
-# DNS01 ClusterIssuer for Route53 (production)
-# Uncomment and configure if using DNS01 challenges with Route53
+# DNS01 ClusterIssuer for Cloudflare (recommended for *.app.skyddex.com)
+# This uses the Cloudflare DNS01 challenge which supports wildcard certificates.
+#
+# Prerequisites:
+#   1. Create a Cloudflare API token with DNS Edit permission for app.skyddex.com
+#   2. Create a Kubernetes secret with the token:
+#      kubectl create secret generic cloudflare-api-token-secret \
+#        --namespace cert-manager \
+#        --from-literal=api-token=<YOUR_CLOUDFLARE_API_TOKEN>
+#   3. Uncomment this ClusterIssuer block
+#   4. Update your Ingress annotations to use: cert-manager.io/cluster-issuer: letsencrypt-cloudflare
+#
 # apiVersion: cert-manager.io/v1
 # kind: ClusterIssuer
 # metadata:
-#   name: letsencrypt-route53
+#   name: letsencrypt-cloudflare
 # spec:
 #   acme:
 #     server: https://acme-v02.api.letsencrypt.org/directory
-#     email: admin@mcaas.example.com
+#     email: admin@skyddex.com
 #     privateKeySecretRef:
-#       name: letsencrypt-route53
+#       name: letsencrypt-cloudflare
 #     solvers:
 #       - dns01:
-#           route53:
-#             region: us-east-1
-#             hostedZoneID: YOUR_HOSTED_ZONE_ID
-#             role: arn:aws:iam::YOUR_ACCOUNT_ID:role/cert-manager-route53
+#           cloudflare:
+#             apiTokenSecretRef:
+#               name: cloudflare-api-token-secret
+#               key: api-token

@@ -13,16 +13,16 @@ kind: ClusterConfig
 
 metadata:
   name: mcaas-eks
-  region: us-east-1
-  version: "1.29"
+  region: eu-west-1
+  version: "1.31"
   tags:
     Project: mcaas
     Environment: production
     ManagedBy: eksctl
 
 availabilityZones:
-  - us-east-1a
-  - us-east-1b
+  - eu-west-1a
+  - eu-west-1b
 
 vpc:
   cidr: 10.0.0.0/16
@@ -78,8 +78,6 @@ managedNodeGroups:
 # EBS CSI Driver addon - required for persistent volumes on EKS
 addons:
   - name: aws-ebs-csi-driver
-    wellKnownPolicies:
-      ebsCSIController: true
     attachPolicy:
       Version: "2012-10-17"
       Statement:
@@ -104,8 +102,21 @@ addons:
           Resource: "*"
 
   - name: vpc-cni
-    wellKnownPolicies:
-      autoAttachAWSIdentity: true
+    attachPolicy:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Action:
+            - ec2:DescribeNetworkInterfaces
+            - ec2:DescribeInstances
+            - ec2:AttachNetworkInterface
+            - ec2:DetachNetworkInterface
+            - ec2:ModifyNetworkInterfaceAttribute
+            - ec2:CreateNetworkInterface
+            - ec2:DeleteNetworkInterface
+            - ec2:AssignPrivateIpAddresses
+            - ec2:UnassignPrivateIpAddresses
+          Resource: "*"
 
   - name: coredns
     version: auto

@@ -17,7 +17,7 @@ ingress:
     cert-manager.io/cluster-issuer: letsencrypt-prod
   tls: true
   hosts:
-    - name: ciso.mcaas.example.com
+    - name: ciso.app.skyddex.com
 
 postgresql:
   enabled: false
