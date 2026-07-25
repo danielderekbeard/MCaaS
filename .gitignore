@@ -5,11 +5,26 @@
 KUBE_CONFIG_DATA.txt
 *.local
 *.log
+*.b64.txt
 .tmp/
 logs/
 **/node_modules
 **/__pycache__
 **/.pytest_cache
 
+# Sensitive files
+wazuh-cert.b64.txt
+wazuh-key.b64.txt
+
+# Temporary/downloaded Helm charts
+shuffle-chart-temp/
+zammad-chart-temp/
+
+# Cloned repositories
+wazuh-kubernetes/
+
 # Session documentation output — not for commit
 docs/
+AWS_DEPLOYMENT_GUIDE.md
+CONFIGURATION_MATRIX.md
+SESSION_SUMMARY.md
