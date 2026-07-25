@@ -119,10 +119,10 @@ addons:
           Resource: "*"
 
   - name: coredns
-    version: auto
+    version: v1.11.4-eksbuild.40
 
   - name: kube-proxy
-    version: auto
+    version: v1.31.14-eksbuild.24
 
 # IAM Service Accounts
 iam:
