@@ -1,0 +1,39 @@
+# AWS Client Configuration for MCaaS Deployment
+# This config is used by deploy-aws.py when --client aws is specified.
+# Adjust the values below for your environment.
+
+client:
+  name: aws
+  prefix: mcaas
+  domain: mcaas.example.com  # Change to your actual domain
+  database_name: mcaas_db
+
+  # Namespace configuration (prefixed with client prefix by default)
+  namespaces:
+    managed-it: managed-it
+    security-ops: security-ops
+    grc: grc
+    wazuh: wazuh
+
+  # Wazuh version
+  wazuh_version: "4.14.6"
+
+  # Ingress configuration for AWS ALB
+  ingress:
+    zammad_host: zammad.mcaas.example.com   # Change to your actual domain
+    ciso_host: ciso.mcaas.example.com       # Change to your actual domain
+
+  # AWS-specific settings (used by deploy-aws.py)
+  aws:
+    cluster_name: mcaas-eks
+    region: us-east-1
+    node_group_workers:
+      instance_type: m5.xlarge
+      desired_capacity: 4
+      min_size: 3
+      max_size: 8
+    node_group_monitoring:
+      instance_type: m5.2xlarge
+      desired_capacity: 2
+      min_size: 1
+      max_size: 4

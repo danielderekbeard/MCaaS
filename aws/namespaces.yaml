@@ -1,0 +1,39 @@
+# AWS-specific namespace definitions
+# These namespaces use the same names as the default deployment for consistency.
+# Adjust prefix/names if using a client-specific config.
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: managed-it
+  labels:
+    app.kubernetes.io/part-of: mcaas
+    environment: aws
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: security-ops
+  labels:
+    app.kubernetes.io/part-of: mcaas
+    environment: aws
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: grc
+  labels:
+    app.kubernetes.io/part-of: mcaas
+    environment: aws
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wazuh
+  labels:
+    app.kubernetes.io/part-of: mcaas
+    environment: aws

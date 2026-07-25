@@ -1,0 +1,36 @@
+# AWS/EKS-specific values for OpenSearch Helm chart
+# Overrides the default deploy/values/opensearch.yaml for AWS EKS
+#
+# Key AWS differences from the k3s deployment:
+# - Uses EBS gp3 StorageClass instead of local-path
+# - Adds resource requests for EKS scheduling
+# - Increases heap size for production workloads
+
+clusterName: mcaas-opensearch
+
+singleNode: true
+
+extraEnvs:
+  - name: DISABLE_SECURITY_PLUGIN
+    value: "false"
+
+securityConfig:
+  enabled: true
+
+secret:
+  existingSecret: mcaas-opensearch-secret
+
+persistence:
+  enabled: true
+  size: 30Gi
+  storageClass: gp3
+
+resources:
+  requests:
+    cpu: "1"
+    memory: 2Gi
+  limits:
+    cpu: "2"
+    memory: 4Gi
+
+opensearchJavaOpts: "-Xms1g -Xmx1g"

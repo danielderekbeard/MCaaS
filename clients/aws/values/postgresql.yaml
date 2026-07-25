@@ -1,0 +1,26 @@
+# AWS/EKS-specific values for PostgreSQL Helm chart
+# Overrides the default deploy/values/postgresql.yaml for AWS EKS
+#
+# Key AWS differences from the k3s deployment:
+# - Uses EBS gp3 StorageClass instead of local-path
+# - Adds volume expansion capability
+# - Adds resource requests for EKS scheduling
+
+auth:
+  existingSecret: mcaas-postgresql-secret
+
+primary:
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: gp3
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+readReplicas:
+  replicaCount: 0

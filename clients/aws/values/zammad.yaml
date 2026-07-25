@@ -1,0 +1,52 @@
+# AWS/EKS-specific values for Zammad Helm chart
+# Overrides the default deploy/values/zammad.yaml for AWS EKS
+#
+# Key AWS differences from the k3s deployment:
+# - Uses AWS ALB IngressClass instead of nginx
+# - Uses EBS gp3 StorageClass for persistence
+# - Adds TLS annotations for cert-manager with ALB
+# - Adds resource requests for EKS scheduling
+
+zammad:
+  ingress:
+    enabled: true
+    className: alb
+    annotations:
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443},{"HTTP":80}]'
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    tls: true
+    hosts:
+      - name: zammad.mcaas.example.com
+
+  redis:
+    auth:
+      existingSecret: mcaas-zammad-redis-pass
+      existingSecretPasswordKey: redis-password
+    master:
+      persistence:
+        enabled: true
+        size: 5Gi
+        storageClass: gp3
+
+  elasticsearch:
+    enabled: false
+
+  postgresql:
+    enabled: false
+
+  externalPostgresql:
+    host: mcaas-postgresql.managed-it.svc.cluster.local
+    port: 5432
+    username: postgres
+    database: zammad
+    existingSecret:
+      name: mcaas-postgresql-secret
+      key: postgres-password
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi

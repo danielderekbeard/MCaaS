@@ -1,0 +1,41 @@
+# AWS/EKS-specific values for Shuffle SOAR Helm chart
+# Overrides the default deploy/values/shuffle.yaml for AWS EKS
+#
+# Key AWS differences from the k3s deployment:
+# - Uses EBS gp3 StorageClass instead of local-path
+# - Adds resource requests for EKS scheduling
+# - Disables internal OpenSearch (uses external OpenSearch)
+
+opensearch:
+  enabled: false
+
+externalOpensearch:
+  enabled: true
+  url: https://mcaas-opensearch.security-ops.svc.cluster.local:9200
+  auth:
+    existingSecret: mcaas-opensearch-secret
+    usernameKey: opensearch-password
+
+existingSecret: mcaas-opensearch-secret
+
+orborus:
+  persistence:
+    enabled: true
+    size: 15Gi
+    storageClass: gp3
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+frontend:
+  resources:
+    requests:
+      cpu: 250m
+      memory: 128Mi
+
+backend:
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
