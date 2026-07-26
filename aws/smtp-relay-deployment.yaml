@@ -1,0 +1,113 @@
+---
+# Postfix SMTP Relay deployment for Zoho Mail relay (socom.co.il domain)
+# Uses mwader/postfix-relay image with env vars for configuration
+# POSTMAP_ env vars auto-generate hash lookup tables (runs postmap automatically)
+# SASL auth enables relaying through smtp.zoho.com:587
+#
+# IMPORTANT: Update the SASL password in the Secret before deploying!
+# The password below is a placeholder - replace with real Zoho Mail app password
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: zoho-smtp-secret
+  namespace: security-ops
+type: Opaque
+stringData:
+  # Zoho SMTP credentials - format: [smtp.zoho.com]:587 username:password
+  SASL_PASSWD: "[smtp.zoho.com]:587 hello@danieldbeard.com:GLJkJ6cWcHLW"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smtp-relay
+  namespace: security-ops
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: smtp-relay
+  template:
+    metadata:
+      labels:
+        app: smtp-relay
+    spec:
+      containers:
+      - name: postfix
+        image: mwader/postfix-relay:latest
+        env:
+        # ---- Postfix main.cf settings via POSTFIX_ env vars ----
+        # Host identity
+        - name: POSTFIX_myhostname
+          value: "smtp-relay.security-ops.svc.cluster.local"
+        - name: POSTFIX_mydomain
+          value: "socom.co.il"
+        - name: POSTFIX_myorigin
+          value: '$mydomain'
+        - name: POSTFIX_mydestination
+          value: "$myhostname, localhost.$mydomain, localhost"
+        # Allow relay from cluster networks
+        - name: POSTFIX_mynetworks
+          value: "10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.0/8"
+        # Relay all outbound mail through Zoho Mail
+        - name: POSTFIX_relayhost
+          value: "[smtp.zoho.com]:587"
+        # SASL authentication for Zoho relay
+        - name: POSTFIX_smtp_sasl_auth_enable
+          value: "yes"
+        - name: POSTFIX_smtp_sasl_password_maps
+          value: "hash:/etc/postfix/sasl_passwd"
+        - name: POSTFIX_smtp_sasl_security_options
+          value: "noanonymous"
+        - name: POSTFIX_smtp_sasl_tls_security_options
+          value: "noanonymous"
+        # TLS - mandatory for Zoho port 587 (STARTTLS)
+        - name: POSTFIX_smtp_tls_security_level
+          value: "encrypt"
+        - name: POSTFIX_smtp_tls_wrappermode
+          value: "no"
+        # Remove error transports - allow mail delivery (override broken defaults)
+        - name: POSTFIX_default_transport
+          value: "smtp"
+        # Relay restrictions - only allow from cluster networks
+        - name: POSTFIX_smtpd_relay_restrictions
+          value: "permit_mynetworks, reject_unauth_destination"
+        - name: POSTFIX_smtpd_recipient_restrictions
+          value: "permit_mynetworks, reject_unauth_destination"
+        # Message size and retry timing
+        - name: POSTFIX_message_size_limit
+          value: "10240000"
+        - name: POSTFIX_minimal_backoff_time
+          value: "300s"
+        - name: POSTFIX_maximal_backoff_time
+          value: "600s"
+        # SASL password lookup table via POSTMAP_ (auto-generates file + postmap)
+        - name: POSTMAP_sasl_passwd
+          valueFrom:
+            secretKeyRef:
+              name: zoho-smtp-secret
+              key: SASL_PASSWD
+        ports:
+        - containerPort: 25
+          name: smtp
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: smtp-relay
+  namespace: security-ops
+spec:
+  selector:
+    app: smtp-relay
+  ports:
+  - port: 25
+    targetPort: 25
+    name: smtp
+  type: ClusterIP
