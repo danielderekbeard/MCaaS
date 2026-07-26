@@ -2,6 +2,7 @@ postgresql:
   enabled: false
 global:
   domain: strategos.mcaas.example.com
+  tls: true
 backend:
   config:
     databaseType: externalPgsql
@@ -15,5 +16,10 @@ externalPgsql:
   database: "ciso-assistant"
 ingress:
   enabled: true
+  ingressClassName: "traefik"
+  annotations:
+    cert-manager.io/cluster-issuer: selfsigned-issuer
+  tls:
+    enabled: true
   # IMPORTANT: Replace strategos.mcaas.example.com with your actual domain.
   # If you don't have a domain, set ingress.enabled=false and use port-forward instead.

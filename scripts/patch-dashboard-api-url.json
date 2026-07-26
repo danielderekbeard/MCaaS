@@ -1,0 +1,24 @@
+{
+  "_comment": "DO NOT USE as a strategic merge patch on a Deployment — it will replace the entire container definition and crash the pod. Use `kubectl set env` instead: kubectl set env deployment/wazuh-dashboard WAZUH_API_URL=https://wazuh.wazuh.svc.cluster.local -n wazuh",
+  "original_dangerous_patch": {
+    "spec": {
+      "template": {
+        "spec": {
+          "containers": [
+            {
+              "name": "wazuh-dashboard",
+              "image": "wazuh/wazuh-dashboard:4.14.6",
+              "env": [
+                {
+                  "name": "WAZUH_API_URL",
+                  "value": "https://wazuh.wazuh.svc.cluster.local"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  "safe_alternative": "kubectl set env deployment/wazuh-dashboard WAZUH_API_URL=https://wazuh.wazuh.svc.cluster.local -n wazuh"
+}

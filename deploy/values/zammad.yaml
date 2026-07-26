@@ -60,7 +60,9 @@ redis:
 # Enable Ingress to expose the Zammad UI externally
 ingress:
   enabled: true
-  className: "nginx"
+  className: "traefik"
+  annotations:
+    cert-manager.io/cluster-issuer: selfsigned-issuer
   hosts:
     # IMPORTANT: Replace alala.mcaas.example.com with your actual domain.
     # If you don't have a domain, set ingress.enabled=false and use port-forward instead.
@@ -68,3 +70,7 @@ ingress:
       paths:
         - path: /
           pathType: ImplementationSpecific
+  tls:
+    - hosts:
+        - alala.mcaas.example.com
+      secretName: zammad-tls

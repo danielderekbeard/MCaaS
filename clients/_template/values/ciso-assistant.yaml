@@ -24,3 +24,8 @@ externalPgsql:
   database: "ciso-assistant"
 ingress:
   enabled: true
+  ingressClassName: "traefik"
+  annotations:
+    cert-manager.io/cluster-issuer: selfsigned-issuer
+  tls:
+    enabled: true

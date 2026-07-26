@@ -1,0 +1,133 @@
+{
+  "spec": {
+    "template": {
+      "spec": {
+        "containers": [
+          {
+            "name": "wazuh-manager",
+            "env": [
+              {
+                "name": "INDEXER_URL",
+                "value": "https://indexer:9200"
+              },
+              {
+                "name": "INDEXER_USERNAME",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "key": "username",
+                    "name": "indexer-cred"
+                  }
+                }
+              },
+              {
+                "name": "INDEXER_PASSWORD",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "key": "password",
+                    "name": "indexer-cred"
+                  }
+                }
+              },
+              {
+                "name": "FILEBEAT_SSL_VERIFICATION_MODE",
+                "value": "full"
+              },
+              {
+                "name": "SSL_CERTIFICATE_AUTHORITIES",
+                "value": "/etc/ssl/root-ca.pem"
+              },
+              {
+                "name": "SSL_CERTIFICATE",
+                "value": "/etc/ssl/filebeat.pem"
+              },
+              {
+                "name": "SSL_KEY",
+                "value": "/etc/ssl/filebeat.key"
+              },
+              {
+                "name": "API_USERNAME",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "key": "username",
+                    "name": "wazuh-api-cred"
+                  }
+                }
+              },
+              {
+                "name": "API_PASSWORD",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "key": "password",
+                    "name": "wazuh-api-cred"
+                  }
+                }
+              },
+              {
+                "name": "WAZUH_CLUSTER_KEY",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "key": "key",
+                    "name": "wazuh-cluster-key"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "containerPort": 1515,
+                "name": "registration"
+              },
+              {
+                "containerPort": 1516,
+                "name": "cluster"
+              },
+              {
+                "containerPort": 55000,
+                "name": "api"
+              }
+            ],
+            "volumeMounts": [
+              {
+                "mountPath": "/wazuh-config-mount/etc/ossec.conf",
+                "name": "config",
+                "readOnly": true,
+                "subPath": "master.conf"
+              },
+              {
+                "mountPath": "/etc/ssl/root-ca.pem",
+                "name": "filebeat-certs",
+                "readOnly": true,
+                "subPath": "root-ca.pem"
+              },
+              {
+                "mountPath": "/etc/ssl/filebeat.pem",
+                "name": "filebeat-certs",
+                "readOnly": true,
+                "subPath": "filebeat.pem"
+              },
+              {
+                "mountPath": "/etc/ssl/filebeat.key",
+                "name": "filebeat-certs",
+                "readOnly": true,
+                "subPath": "filebeat-key.pem"
+              },
+              {
+                "mountPath": "/wazuh-config-mount/etc/authd.pass",
+                "name": "wazuh-authd-pass",
+                "readOnly": true,
+                "subPath": "authd.pass"
+              }
+            ],
+            "securityContext": {
+              "capabilities": {
+                "add": [
+                  "SYS_CHROOT"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -65,9 +65,15 @@ redis:
 # Enable Ingress to expose the Zammad UI externally
 ingress:
   enabled: true
-  className: "nginx"
+  className: "traefik"
+  annotations:
+    cert-manager.io/cluster-issuer: selfsigned-issuer
   hosts:
     - host: <zammad_host>
       paths:
         - path: /
           pathType: ImplementationSpecific
+  tls:
+    - hosts:
+        - <zammad_host>
+      secretName: <prefix>-zammad-tls

@@ -19,6 +19,8 @@ import string
 from datetime import datetime, timezone
 from pathlib import Path
 import argparse
+import json
+import textwrap
 import yaml
 
 # --- Configuration ---
@@ -32,6 +34,9 @@ PLATFORM = platform.system()
 IS_WINDOWS = PLATFORM == "Windows"
 IS_POSIX = PLATFORM in ("Linux", "Darwin")
 
+
+# Wazuh dashboard default password (hardcoded in upstream Wazuh K8s chart's indexer-cred secret)
+WAZUH_DEFAULT_PASSWORD = "SecretPassword"
 
 # --- Default (mcaas) Configuration ---
 # When --client is NOT specified, these values are used, preserving
@@ -853,82 +858,63 @@ def clone_or_use_wazuh_repo(wazuh_dir):
 
 
 def deploy_ingress_controller(cfg):
-    """Deploy the NGINX Ingress Controller via Helm.
+    """Install cert-manager and create a self-signed ClusterIssuer.
 
-    Installs the ``ingress-nginx`` Helm chart which provides a single
-    LoadBalancer entry point for all services. On local Kubernetes clusters
-    (Docker Desktop, Rancher Desktop, Minikube) the LoadBalancer service
-    will be assigned an external IP of ``127.0.0.1`` or ``localhost``,
-    making all ingress hosts accessible locally.
+    On k3s-based clusters (Rancher Desktop, k3s), Traefik is already
+    included as the built-in ingress controller with a LoadBalancer
+    service, so no separate ingress controller installation is needed.
+
+    This function instead installs **cert-manager** and creates a
+    self-signed ``ClusterIssuer`` so that all Ingress resources can
+    obtain TLS certificates automatically via the
+    ``cert-manager.io/cluster-issuer`` annotation.
 
     Args:
         cfg: Client configuration dict from :func:`load_client_config`.
     """
-    prefix = cfg["prefix"]
-    ns_ingress = "ingress-nginx"
+    logging.info("Installing cert-manager...")
 
-    logging.info("Installing NGINX Ingress Controller...")
+    # Install cert-manager via kubectl apply (official static manifest).
+    # We apply the manifest directly rather than using the Helm chart
+    # to avoid adding another Helm repo dependency.
+    cert_manager_url = (
+        "https://github.com/cert-manager/cert-manager/"
+        "releases/download/v1.16.3/cert-manager.yaml"
+    )
+    run_command(["kubectl", "apply", "-f", cert_manager_url])
 
-    # Create the ingress-nginx namespace (idempotent).
-    run_command(
-        ["kubectl", "create", "namespace", ns_ingress],
-        check=False,
-    )
+    # Wait for cert-manager deployments to become ready before creating
+    # the ClusterIssuer (otherwise cert-manager will reject it).
+    for dep in ("cert-manager", "cert-manager-cainjector", "cert-manager-webhook"):
+        run_command(
+            [
+                "kubectl",
+                "wait",
+                "--for=condition=Available",
+                "deployment",
+                dep,
+                "-n",
+                "cert-manager",
+                "--timeout=120s",
+            ],
+            check=False,
+        )
 
-    # Use --no-hooks to avoid hanging on the admission-webhook cert generation
-    # Jobs (pre-install hooks) which can stall on local k3s clusters.  The
-    # admission webhook is still installed as part of the chart's main manifest
-    # but its certificate won't be auto-generated.  We patch the webhook's
-    # failurePolicy to *Ignore* so that Ingress validation degrades gracefully
-    # on local deployments rather than blocking Ingress creation.
-    run_command(
-        [
-            "helm",
-            "upgrade",
-            "--install",
-            f"{prefix}-ingress-nginx",
-            "ingress-nginx/ingress-nginx",
-            "--namespace",
-            ns_ingress,
-            "--set",
-            "controller.service.type=LoadBalancer",
-            "--set",
-            "controller.service.externalTrafficPolicy=Local",
-            "--set",
-            "controller.config.proxy-body-size=64m",
-            "--no-hooks",
-        ]
-    )
+    logging.info("Creating self-signed ClusterIssuer...")
 
-    # Patch the admission webhook so validation failures are silently ignored
-    # on local deployments (the webhook has no CA bundle when --no-hooks is
-    # used, so every validation would fail).
-    # We write a JSON-patch file to disk first to avoid shell-quoting issues
-    # on Windows (PowerShell) and POSIX shells alike.
-    webhook_name = f"{prefix}-ingress-nginx-admission"
-    patch_file = TMP_DIR / "webhook-patch.json"
-    patch_file.parent.mkdir(parents=True, exist_ok=True)
-    patch_file.write_text(
-        '[{"op":"replace","path":"/webhooks/0/failurePolicy","value":"Ignore"}]\n'
-    )
-    logging.info(
-        "Patching admission webhook %s to failurePolicy=Ignore ...", webhook_name
-    )
-    run_command(
-        [
-            "kubectl",
-            "patch",
-            "validatingwebhookconfiguration",
-            webhook_name,
-            "--type",
-            "json",
-            "--patch-file",
-            str(patch_file),
-        ],
-        check=False,
-    )
+    # Create a self-signed ClusterIssuer so that cert-manager can
+    # issue TLS certificates for all Ingress resources.
+    cluster_issuer_manifest = """apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}"""
+    manifest_file = TMP_DIR / "cluster-issuer.yaml"
+    manifest_file.write_text(cluster_issuer_manifest, encoding="utf-8")
+    run_command(["kubectl", "apply", "-f", str(manifest_file)])
 
-    logging.info("NGINX Ingress Controller installed successfully.")
+    logging.info("cert-manager and self-signed ClusterIssuer installed successfully.")
 
 
 def deploy_ingress_resources(cfg):
@@ -963,9 +949,13 @@ metadata:
   name: {prefix}-shuffle-ingress
   namespace: {ns["security-ops"]}
   annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+    cert-manager.io/cluster-issuer: selfsigned-issuer
 spec:
-  ingressClassName: nginx
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - {shuffle_host}
+      secretName: shuffle-tls
   rules:
     - host: {shuffle_host}
       http:
@@ -974,7 +964,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: shuffle
+                name: shuffle-frontend
                 port:
                   number: 80
 """
@@ -990,10 +980,14 @@ metadata:
   name: {prefix}-wazuh-ingress
   namespace: {ns["wazuh"]}
   annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    cert-manager.io/cluster-issuer: selfsigned-issuer
+    traefik.ingress.kubernetes.io/backend-protocol: "http"
 spec:
-  ingressClassName: nginx
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - {wazuh_host}
+      secretName: wazuh-dashboard-tls
   rules:
     - host: {wazuh_host}
       http:
@@ -1002,9 +996,9 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: wazuh-dashboard
+                name: dashboard
                 port:
-                  number: 5601
+                  number: 80
 """
     wazuh_manifest = TMP_DIR / "wazuh-ingress.yaml"
     wazuh_manifest.write_text(wazuh_ingress, encoding="utf-8")
@@ -1178,6 +1172,314 @@ def deploy_wazuh(wazuh_dir, cfg):
                 "volumeBindingMode: WaitForFirstConsumer\n"
             ),
         )
+
+    # --- Post-deployment patches for Wazuh ---
+    # 1) Dashboard: disable internal SSL and expose HTTP (Traefik does TLS).
+    # 2) Manager: increase memory limits (upstream default 512Mi causes OOMKilled).
+    # 3) Dashboard: set WAZUH_API_URL to use the in-cluster Service DNS name
+    #    so the dashboard can reach the Wazuh API without relying on the
+    #    upstream default hostname (which may not resolve in k3s).
+    # 4) Manager: restore the full container spec (env vars, ports, volumeMounts,
+    #    securityContext) that was stripped by `kubectl set resources`. Without
+    #    this, Filebeat cannot connect to the indexer and the manager loses its
+    #    configuration.
+    # 5) Dashboard: restart after manager patches to ensure clean API connections
+    #    and avoid transient 500 errors from stale connection state.
+    if dry_run:
+        logging.info("Dry-run: skipping Wazuh post-deployment patches.")
+    else:
+        _patch_wazuh_dashboard_http(cfg)
+        _patch_wazuh_manager_memory(cfg)
+        _patch_wazuh_dashboard_api_url(cfg)
+        _patch_wazuh_manager_spec(cfg)
+        _restart_wazuh_dashboard(cfg)
+
+
+def _patch_wazuh_dashboard_http(cfg):
+    """Patch the Wazuh dashboard to serve HTTP internally.
+
+    The upstream Wazuh dashboard is configured with SSL enabled, serving HTTPS
+    on port 5601 with its own internal certificates. When using Traefik as the
+    ingress controller with TLS termination, this creates a mismatch — Traefik
+    connects to the backend over HTTPS, but the dashboard's self-signed certs
+    cause TLS handshake failures.
+
+    This function patches the dashboard ConfigMap to disable SSL and then
+    patches the Service to expose port 80 → 5601 (HTTP) instead of
+    443 → 5601 (HTTPS). After patching, it restarts the dashboard deployment
+    so the new configuration takes effect.
+
+    Args:
+        cfg: Client configuration dict from :func:`load_client_config`.
+    """
+    wazuh_ns = cfg["namespaces"]["wazuh"]
+
+    logging.info("Patching Wazuh dashboard ConfigMap to disable SSL...")
+
+    # Get the current dashboard ConfigMap name (it has a hash suffix).
+    cm_result = run_command(
+        [
+            "kubectl",
+            "get",
+            "configmap",
+            "-n",
+            wazuh_ns,
+            "-l",
+            "app=wazuh-dashboard",
+            "-o",
+            "jsonpath={.items[0].metadata.name}",
+        ],
+        check=False,
+    )
+    if not cm_result or cm_result.returncode != 0:
+        logging.warning(
+            "Could not find Wazuh dashboard ConfigMap; skipping SSL patch. "
+            "The dashboard may serve HTTPS internally, which can cause TLS "
+            "errors when Traefik routes traffic to it."
+        )
+        return
+
+    cm_name = cm_result.stdout.strip()
+    logging.info(f"Found dashboard ConfigMap: {cm_name}")
+
+    # Patch the ConfigMap: disable server.ssl.enabled and remove SSL cert/key lines.
+    # We use a strategic merge patch to replace the opensearch_dashboards.yml data.
+    dashboard_config = textwrap.dedent("""\
+        server.host: 0.0.0.0
+        server.port: 5601
+        opensearch.hosts: https://indexer:9200
+        opensearch.ssl.verificationMode: none
+        opensearch.requestHeadersWhitelist: [ authorization,securitytenant ]
+        opensearch_security.multitenancy.enabled: false
+        opensearch_security.readonly_mode.roles: ["kibana_read_only"]
+        server.ssl.enabled: false
+        opensearch.ssl.certificateAuthorities: ["/usr/share/wazuh-dashboard/certs/root-ca.pem"]
+        uiSettings.overrides.defaultRoute: /app/wz-home
+        opensearch_security.cookie.ttl: 900000
+        opensearch_security.session.ttl: 900000
+        opensearch_security.session.keepalive: true
+    """)
+
+    # Build a JSON patch that replaces the opensearch_dashboards.yml key.
+    patch = json.dumps(
+        [
+            {
+                "op": "replace",
+                "path": "/data/opensearch_dashboards.yml",
+                "value": dashboard_config,
+            }
+        ]
+    )
+
+    run_command(
+        [
+            "kubectl",
+            "patch",
+            "configmap",
+            cm_name,
+            "-n",
+            wazuh_ns,
+            "--type",
+            "json",
+            "-p",
+            patch,
+        ],
+    )
+
+    # Patch the dashboard Service: change port from 443 to 80 (HTTP).
+    logging.info("Patching Wazuh dashboard Service to use port 80...")
+    run_command(
+        [
+            "kubectl",
+            "patch",
+            "service",
+            "dashboard",
+            "-n",
+            wazuh_ns,
+            "-p",
+            json.dumps(
+                {"spec": {"ports": [{"name": "http", "port": 80, "targetPort": 5601}]}}
+            ),
+        ],
+    )
+
+    # Restart the dashboard deployment to pick up the new configuration.
+    logging.info("Restarting Wazuh dashboard deployment...")
+    run_command(
+        [
+            "kubectl",
+            "rollout",
+            "restart",
+            "deployment",
+            "wazuh-dashboard",
+            "-n",
+            wazuh_ns,
+        ],
+    )
+    logging.info("Wazuh dashboard patched: SSL disabled, service port changed to 80.")
+
+
+def _patch_wazuh_manager_memory(cfg):
+    """Increase the Wazuh manager StatefulSet memory limits.
+
+    The upstream Wazuh kustomization sets the manager container memory limit to
+    512Mi, which is insufficient and causes OOMKilled crashes. This patch
+    increases the limit to 2Gi to prevent out-of-memory terminations.
+
+    We use ``kubectl set resources`` which is safe for StatefulSets (unlike
+    strategic merge patches on container lists which can replace the entire
+    container definition and lose important settings).
+
+    Args:
+        cfg: Client configuration dict from :func:`load_client_config`.
+    """
+    wazuh_ns = cfg["namespaces"]["wazuh"]
+
+    logging.info("Patching Wazuh manager StatefulSet memory limits (512Mi → 2Gi)...")
+    run_command(
+        [
+            "kubectl",
+            "set",
+            "resources",
+            "statefulset",
+            "wazuh-manager-master",
+            "-n",
+            wazuh_ns,
+            "-c=wazuh-manager",
+            "--limits=memory=2Gi",
+            "--requests=memory=512Mi",
+        ],
+    )
+    logging.info("Wazuh manager memory limits patched successfully.")
+
+
+def _patch_wazuh_dashboard_api_url(cfg):
+    """Set the WAZUH_API_URL env var on the Wazuh dashboard deployment.
+
+    The upstream Wazuh dashboard image ships with ``wazuh.yml`` that points the
+    API URL to ``wazuh-manager-master-0.wazuh-cluster`` — a hostname that only
+    resolves inside the upstream MicroK8s cluster. On k3s the Wazuh Service is
+    called ``wazuh`` and the DNS name ``wazuh.wazuh.svc.cluster.local`` resolves
+    correctly.
+
+    We use ``kubectl set env`` which patches only the env-var field and is
+    safe (unlike strategic-merge-patching a container list which can replace the
+    entire container spec).
+
+    Args:
+        cfg: Client configuration dict from :func:`load_env_config`.
+    """
+    wazuh_ns = cfg["namespaces"]["wazuh"]
+
+    logging.info(
+        "Setting WAZUH_API_URL on Wazuh dashboard deployment to use in-cluster DNS..."
+    )
+    run_command(
+        [
+            "kubectl",
+            "set",
+            "env",
+            "deployment/wazuh-dashboard",
+            "-n",
+            wazuh_ns,
+            "WAZUH_API_URL=https://wazuh.wazuh.svc.cluster.local",
+        ],
+    )
+    logging.info("WAZUH_API_URL patched. Restarting dashboard to pick up the change...")
+    run_command(
+        [
+            "kubectl",
+            "rollout",
+            "restart",
+            "deployment/wazuh-dashboard",
+            "-n",
+            wazuh_ns,
+        ],
+    )
+
+
+def _patch_wazuh_manager_spec(cfg):
+    """Restore the full Wazuh manager container spec on the StatefulSet.
+
+    The upstream Wazuh kustomization deploys a StatefulSet with a rich container
+    spec including environment variables (INDEXER_URL, INDEXER_USERNAME/PASSWORD
+    from secrets, API_USERNAME/PASSWORD from secrets, WAZUH_CLUSTER_KEY from
+    secret, SSL_* paths, FILEBEAT_SSL_VERIFICATION_MODE), container ports,
+    volumeMounts (ossec.conf from ConfigMap, SSL certs from secrets, authd.pass
+    from secret), and a securityContext (SYS_CHROOT capability).
+
+    However, ``kubectl set resources`` — which we use to increase memory limits
+    — strips the container spec down to only the fields it knows about (image,
+    name, resources, terminationMessagePolicy), discarding env vars, ports,
+    volumeMounts, and securityContext.  This leaves Filebeat unable to connect
+    to the indexer (no INDEXER_URL env var → filebeat.yml defaults to the
+    upstream ``wazuh.indexer`` hostname which doesn't resolve on k3s).
+
+    We apply a strategic merge patch from
+    ``scripts/patch-wazuh-manager-spec.json`` to restore the missing fields.
+    This patch must run *after* ``_patch_wazuh_manager_memory`` so that the
+    memory limits are not overwritten by the patch (the patch does not include
+    resources, so they are preserved by the merge).
+
+    Args:
+        cfg: Client configuration dict from :func:`load_client_config`.
+    """
+    wazuh_ns = cfg["namespaces"]["wazuh"]
+    patch_file = PROJECT_ROOT / "scripts" / "patch-wazuh-manager-spec.json"
+
+    if not patch_file.exists():
+        logging.warning(
+            "Wazuh manager spec patch file not found: %s — skipping spec restoration. "
+            "The manager may start with a barebones container spec and Filebeat "
+            "will be unable to connect to the indexer.",
+            patch_file,
+        )
+        return
+
+    logging.info(
+        "Restoring Wazuh manager container spec (env vars, ports, volumeMounts, securityContext)..."
+    )
+    run_command(
+        [
+            "kubectl",
+            "patch",
+            "statefulset",
+            "wazuh-manager-master",
+            "-n",
+            wazuh_ns,
+            "--type",
+            "strategic",
+            "--patch-file",
+            str(patch_file),
+        ],
+    )
+    logging.info("Wazuh manager container spec restored successfully.")
+
+
+def _restart_wazuh_dashboard(cfg):
+    """Restart the Wazuh dashboard deployment after manager patches.
+
+    The Wazuh dashboard may hold stale connections to the manager API if the
+    manager pod was restarted during the patch sequence (e.g. memory or spec
+    changes trigger a rolling restart). Restarting the dashboard ensures it
+    re-establishes connections cleanly and avoids transient 500 errors.
+
+    Args:
+        cfg: Client configuration dict from :func:`load_client_config`.
+    """
+    wazuh_ns = cfg["namespaces"]["wazuh"]
+    logging.info("Restarting Wazuh dashboard to ensure clean API connections...")
+    run_command(
+        [
+            "kubectl",
+            "rollout",
+            "restart",
+            "deployment/wazuh-dashboard",
+            "-n",
+            wazuh_ns,
+        ],
+    )
+    logging.info("Wazuh dashboard restart initiated.")
 
 
 def load_env_file():
@@ -1656,7 +1958,7 @@ def generate_environment_summary(cfg: dict):
         "",
         "## Web Interfaces (Ingress)",
         "",
-        "All services are exposed via the NGINX Ingress Controller.  Access them",
+        "All services are exposed via Traefik Ingress (built-in on k3s) with TLS",
         "by adding the host entries to your hosts file (see Local Access Setup below).",
         "",
         "| Service | URL | Default Credentials |",
@@ -1664,7 +1966,7 @@ def generate_environment_summary(cfg: dict):
         f"| **Alala** (Zammad Ticketing) | [{zammad_url}]({zammad_url}) | `admin` / set on first login |",
         f"| **Strategos** (CISO Assistant GRC) | [{ciso_url}]({ciso_url}) | `admin` / set on first login |",
         f"| **Kydoimos** (Shuffle SOAR) | [{shuffle_url}]({shuffle_url}) | OpenID / configured at first setup |",
-        f"| **Deimos** (Wazuh SIEM) | [{wazuh_url}]({wazuh_url}) | `admin` / `MYPASSWORD_` — change immediately |",
+        f"| **Deimos** (Wazuh SIEM) | [{wazuh_url}]({wazuh_url}) | `admin` / `{WAZUH_DEFAULT_PASSWORD}` — change immediately |",
         "",
         "## Local Access Setup (Windows)",
         "",
@@ -1673,7 +1975,7 @@ def generate_environment_summary(cfg: dict):
         "",
         "1.  Get the LoadBalancer IP:",
         "    ```bash",
-        "    kubectl get svc -n ingress-nginx",
+        "    kubectl get svc -n traefik",
         "    ```",
         "    For Docker Desktop / Rancher Desktop the EXTERNAL-IP is typically",
         "    `127.0.0.1` or `localhost`.",
@@ -1733,7 +2035,7 @@ def generate_environment_summary(cfg: dict):
         "### Wazuh Dashboard",
         "",
         f"- **Username:** `admin`",
-        "- **Default password:** `MYPASSWORD_` — **change this immediately** after first login",
+        f"- **Default password:** `{WAZUH_DEFAULT_PASSWORD}` — **change this immediately** after first login",
         "- **Port-forward:** `kubectl port-forward svc/wazuh-dashboard -n "
         f"{ns['wazuh']} 8443:5601`",
         "",
@@ -1757,7 +2059,7 @@ def generate_environment_summary(cfg: dict):
         f"| Security Ops / OpenSearch / Shuffle | `{ns['security-ops']}` |",
         f"| GRC / CISO Assistant | `{ns['grc']}` |",
         f"| Wazuh (Manager + Dashboard + Indexer) | `{ns['wazuh']}` |",
-        f"| NGINX Ingress Controller | `ingress-nginx` |",
+        f"| cert-manager | `cert-manager` |",
         "",
         "---",
         "",
@@ -1770,7 +2072,7 @@ def generate_environment_summary(cfg: dict):
         f"| `{prefix}-shuffle` | `oci://ghcr.io/shuffle/charts/shuffle` | `{ns['security-ops']}` |",
         f"| `{prefix}-zammad` | `oci://ghcr.io/zammad/charts/zammad` | `{ns['managed-it']}` |",
         f"| `{prefix}-ciso` | `oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant` | `{ns['grc']}` |",
-        f"| `ingress-nginx` | `ingress-nginx/ingress-nginx` | `ingress-nginx` |",
+        f"| `cert-manager` | static manifest v1.16.3 | `cert-manager` |",
         "",
         "---",
         "",
@@ -1835,7 +2137,9 @@ def generate_environment_summary(cfg: dict):
     print(f"    OpenSearch password: {opensearch_pw}")
     print(f"    Redis password:      {redis_pw}")
     print(f"    Django secret key:   {django_secret}")
-    print(f"    Wazuh default:       admin / MYPASSWORD_  (change immediately!)")
+    print(
+        f"    Wazuh default:       admin / {WAZUH_DEFAULT_PASSWORD}  (change immediately!)"
+    )
     print()
     print(f"  Full summary saved to: {summary_file}")
     print("=" * 72 + "\n")
@@ -2011,20 +2315,10 @@ def main():
             ],
             check=False,
         )
-        run_command(
-            [
-                "helm",
-                "repo",
-                "add",
-                "ingress-nginx",
-                "https://kubernetes.github.io/ingress-nginx",
-            ],
-            check=False,
-        )
         run_command(["helm", "repo", "update"])
 
-        # Deploy NGINX Ingress Controller before services so ingressClassName
-        # "nginx" is available when Helm charts create their Ingress objects.
+        # Install cert-manager and ClusterIssuer before deploying services so
+        # that Ingress resources can obtain TLS certificates automatically.
         deploy_ingress_controller(cfg)
 
         logging.info("Deploying PostgreSQL...")

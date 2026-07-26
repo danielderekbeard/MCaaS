@@ -1,0 +1,92 @@
+﻿apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"apps/v1","kind":"StatefulSet","metadata":{"annotations":{},"name":"wazuh-manager-master","namespace":"wazuh"},"spec":{"podManagementPolicy":"Parallel","replicas":1,"selector":{"matchLabels":{"app":"wazuh-manager","node-type":"master"}},"serviceName":"wazuh-cluster","template":{"metadata":{"labels":{"app":"wazuh-manager","node-type":"master"},"name":"wazuh-manager-master"},"spec":{"containers":[{"env":[{"name":"INDEXER_URL","value":"https://indexer:9200"},{"name":"INDEXER_USERNAME","valueFrom":{"secretKeyRef":{"key":"username","name":"indexer-cred"}}},{"name":"INDEXER_PASSWORD","valueFrom":{"secretKeyRef":{"key":"password","name":"indexer-cred"}}},{"name":"FILEBEAT_SSL_VERIFICATION_MODE","value":"full"},{"name":"SSL_CERTIFICATE_AUTHORITIES","value":"/etc/ssl/root-ca.pem"},{"name":"SSL_CERTIFICATE","value":"/etc/ssl/filebeat.pem"},{"name":"SSL_KEY","value":"/etc/ssl/filebeat.key"},{"name":"API_USERNAME","valueFrom":{"secretKeyRef":{"key":"username","name":"wazuh-api-cred"}}},{"name":"API_PASSWORD","valueFrom":{"secretKeyRef":{"key":"password","name":"wazuh-api-cred"}}},{"name":"WAZUH_CLUSTER_KEY","valueFrom":{"secretKeyRef":{"key":"key","name":"wazuh-cluster-key"}}}],"image":"wazuh/wazuh-manager:4.14.6","name":"wazuh-manager","ports":[{"containerPort":1515,"name":"registration"},{"containerPort":1516,"name":"cluster"},{"containerPort":55000,"name":"api"}],"resources":{"limits":{"cpu":"400m","memory":"512Mi"}},"securityContext":{"capabilities":{"add":["SYS_CHROOT"]}},"volumeMounts":[{"mountPath":"/wazuh-config-mount/etc/ossec.conf","name":"config","readOnly":true,"subPath":"master.conf"},{"mountPath":"/etc/ssl/root-ca.pem","name":"filebeat-certs","readOnly":true,"subPath":"root-ca.pem"},{"mountPath":"/etc/ssl/filebeat.pem","name":"filebeat-certs","readOnly":true,"subPath":"filebeat.pem"},{"mountPath":"/etc/ssl/filebeat.key","name":"filebeat-certs","readOnly":true,"subPath":"filebeat-key.pem"},{"mountPath":"/wazuh-config-mount/etc/authd.pass","name":"wazuh-authd-pass","readOnly":true,"subPath":"authd.pass"},{"mountPath":"/var/ossec/api/configuration","name":"wazuh-manager-master","subPath":"wazuh/var/ossec/api/configuration"},{"mountPath":"/var/ossec/etc","name":"wazuh-manager-master","subPath":"wazuh/var/ossec/etc"},{"mountPath":"/var/ossec/logs","name":"wazuh-manager-master","subPath":"wazuh/var/ossec/logs"},{"mountPath":"/var/ossec/queue","name":"wazuh-manager-master","subPath":"wazuh/var/ossec/queue"},{"mountPath":"/var/ossec/var/multigroups","name":"wazuh-manager-master","subPath":"wazuh/var/ossec/var/multigroups"},{"mountPath":"/var/ossec/integrations","name":"wazuh-manager-master","subPath":"wazuh/var/ossec/integrations"},{"mountPath":"/var/ossec/active-response/bin","name":"wazuh-manager-master","subPath":"wazuh/var/ossec/active-response/bin"},{"mountPath":"/var/ossec/agentless","name":"wazuh-manager-master","subPath":"wazuh/var/ossec/agentless"},{"mountPath":"/var/ossec/wodles","name":"wazuh-manager-master","subPath":"wazuh/var/ossec/wodles"},{"mountPath":"/etc/filebeat","name":"wazuh-manager-master","subPath":"filebeat/etc/filebeat"},{"mountPath":"/var/lib/filebeat","name":"wazuh-manager-master","subPath":"filebeat/var/lib/filebeat"}]}],"securityContext":{"fsGroup":101},"volumes":[{"configMap":{"name":"wazuh-conf-2t66md6694"},"name":"config"},{"name":"filebeat-certs","secret":{"secretName":"indexer-certs-9h4d9gttmf"}},{"name":"wazuh-authd-pass","secret":{"secretName":"wazuh-authd-pass"}}]}},"volumeClaimTemplates":[{"metadata":{"name":"wazuh-manager-master","namespace":"wazuh"},"spec":{"accessModes":["ReadWriteOnce"],"resources":{"requests":{"storage":"500Mi"}},"storageClassName":"wazuh-storage"}}]}}
+  creationTimestamp: "2026-07-26T00:17:24Z"
+  generation: 3
+  name: wazuh-manager-master
+  namespace: wazuh
+  resourceVersion: "28340"
+  uid: 7aee32d1-aaea-4afa-9916-1980d8c22312
+spec:
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  podManagementPolicy: Parallel
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: wazuh-manager
+      node-type: master
+  serviceName: wazuh-cluster
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: "2026-07-26T04:55:04+03:00"
+      labels:
+        app: wazuh-manager
+        node-type: master
+      name: wazuh-manager-master
+    spec:
+      containers:
+      - image: wazuh/wazuh-manager:4.14.6
+        imagePullPolicy: IfNotPresent
+        name: wazuh-manager
+        resources:
+          limits:
+            cpu: 400m
+            memory: 2Gi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroup: 101
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: wazuh-conf-2t66md6694
+        name: config
+      - name: filebeat-certs
+        secret:
+          defaultMode: 420
+          secretName: indexer-certs-9h4d9gttmf
+      - name: wazuh-authd-pass
+        secret:
+          defaultMode: 420
+          secretName: wazuh-authd-pass
+  updateStrategy:
+    rollingUpdate:
+      partition: 0
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: wazuh-manager-master
+      namespace: wazuh
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 500Mi
+      storageClassName: wazuh-storage
+      volumeMode: Filesystem
+    status:
+      phase: Pending
+status:
+  availableReplicas: 1
+  collisionCount: 0
+  currentReplicas: 1
+  currentRevision: wazuh-manager-master-5f7c8f648d
+  observedGeneration: 3
+  readyReplicas: 1
+  replicas: 1
+  updateRevision: wazuh-manager-master-5f7c8f648d
+  updatedReplicas: 1
