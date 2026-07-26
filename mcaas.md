@@ -148,7 +148,7 @@ ingress:
   enabled: true
   className: "nginx"
   hosts:
-    - host: zammad.mcaas.example.com
+    - host: alala.mcaas.example.com
       paths:
         - path: /
           pathType: ImplementationSpecific
@@ -159,7 +159,7 @@ Target Namespace: grc. Framework mapping and compliance tracking.
 postgresql:
   enabled: false
 global:
-  domain: ciso.mcaas.example.com
+  domain: strategos.mcaas.example.com
 backend:
   config:
     databaseType: externalPgsql

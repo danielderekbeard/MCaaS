@@ -9,7 +9,7 @@
 # - Uses external PostgreSQL instead of built-in
 
 global:
-  domain: ciso.testcustomer.socom.co.il
+  domain: strategos.testcustomer.socom.co.il
   tls: true
 
 backend:
@@ -38,8 +38,8 @@ ingress:
     cert-manager.io/cluster-issuer: letsencrypt-prod
   tls:
   - hosts:
-    - ciso.testcustomer.socom.co.il
-    secretName: ciso-testcustomer-tls
+    - strategos.testcustomer.socom.co.il
+    secretName: strategos-testcustomer-tls
 
 postgresql:
   enabled: false

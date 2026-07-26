@@ -18,11 +18,11 @@ ingress:
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     cert-manager.io/cluster-issuer: letsencrypt-prod
   tls:
-    - secretName: zammad-testcustomer-socom-co-il-tls
+    - secretName: alala-testcustomer-socom-co-il-tls
       hosts:
-        - zammad.testcustomer.socom.co.il
+        - alala.testcustomer.socom.co.il
   hosts:
-    - host: zammad.testcustomer.socom.co.il
+    - host: alala.testcustomer.socom.co.il
       paths:
         - path: /
           pathType: ImplementationSpecific

@@ -17,7 +17,7 @@ metadata:
 spec:
   ingressClassName: alb
   rules:
-  - host: shuffle.testcustomer.socom.co.il
+  - host: kydoimos.testcustomer.socom.co.il
     http:
       paths:
       - path: /api/
@@ -36,5 +36,5 @@ spec:
               number: 80
   tls:
   - hosts:
-    - shuffle.testcustomer.socom.co.il
-    secretName: shuffle-testcustomer-socom-co-il-tls
+    - kydoimos.testcustomer.socom.co.il
+    secretName: kydoimos-testcustomer-socom-co-il-tls

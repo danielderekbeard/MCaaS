@@ -1,7 +1,7 @@
 postgresql:
   enabled: false
 global:
-  domain: ciso.demo.mcaas.example.com
+  domain: strategos.demo.mcaas.example.com
 backend:
   config:
     databaseType: externalPgsql

@@ -57,7 +57,7 @@ metadata:
 spec:
   ingressClassName: alb
   rules:
-    - host: wazuh.testcustomer.socom.co.il
+    - host: deimos.testcustomer.socom.co.il
       http:
         paths:
           - path: /
@@ -69,5 +69,5 @@ spec:
                   number: 443
   tls:
     - hosts:
-        - wazuh.testcustomer.socom.co.il
-      secretName: wazuh-testcustomer-socom-co-il-tls
+        - deimos.testcustomer.socom.co.il
+      secretName: deimos-testcustomer-socom-co-il-tls

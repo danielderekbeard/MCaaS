@@ -62,9 +62,9 @@ ingress:
   enabled: true
   className: "nginx"
   hosts:
-    # IMPORTANT: Replace zammad.mcaas.example.com with your actual domain.
+    # IMPORTANT: Replace alala.mcaas.example.com with your actual domain.
     # If you don't have a domain, set ingress.enabled=false and use port-forward instead.
-    - host: zammad.mcaas.example.com
+    - host: alala.mcaas.example.com
       paths:
         - path: /
           pathType: ImplementationSpecific

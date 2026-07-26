@@ -20,10 +20,10 @@ client:
 
   # Ingress configuration for AWS ALB
   ingress:
-    zammad_host: zammad.testcustomer.socom.co.il
-    ciso_host: ciso.testcustomer.socom.co.il
-    shuffle_host: shuffle.testcustomer.socom.co.il
-    wazuh_host: wazuh.testcustomer.socom.co.il
+    zammad_host: alala.testcustomer.socom.co.il
+    ciso_host: strategos.testcustomer.socom.co.il
+    shuffle_host: kydoimos.testcustomer.socom.co.il
+    wazuh_host: deimos.testcustomer.socom.co.il
 
   # AWS-specific settings (used by deploy-aws.py)
   aws:

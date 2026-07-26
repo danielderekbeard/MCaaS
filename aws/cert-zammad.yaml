@@ -5,11 +5,11 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: zammad-testcustomer-socom-co-il-tls
+  name: alala-testcustomer-socom-co-il-tls
   namespace: managed-it
 spec:
   dnsNames:
-  - zammad.testcustomer.socom.co.il
+  - alala.testcustomer.socom.co.il
   issuerRef:
     kind: ClusterIssuer
     name: letsencrypt-cloudflare

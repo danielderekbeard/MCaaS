@@ -17,7 +17,7 @@ client:
   display_name: ""
 
   # Domain suffix for ingress hosts
-  # Example: "acme.example.com" → zammad.acme.example.com, ciso.acme.example.com
+  # Example: "acme.example.com" → alala.acme.example.com, strategos.acme.example.com
   domain: ""
 
   # Resource prefix applied to all Helm releases, secrets, and DB names
@@ -45,10 +45,10 @@ client:
 
   # Ingress configuration
   ingress:
-    zammad_host: ""     # e.g., "zammad.acme.example.com"
-    ciso_host: ""       # e.g., "ciso.acme.example.com"
-    shuffle_host: ""    # e.g., "shuffle.acme.example.com"
-    wazuh_host: ""      # e.g., "wazuh.acme.example.com"
+    zammad_host: ""     # e.g., "alala.acme.example.com"
+    ciso_host: ""       # e.g., "strategos.acme.example.com"
+    shuffle_host: ""    # e.g., "kydoimos.acme.example.com"
+    wazuh_host: ""      # e.g., "deimos.acme.example.com"
 
   # AWS-specific settings (used by deploy-aws.py for EKS deployments)
   # Remove this section for non-AWS deployments.

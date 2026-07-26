@@ -11,5 +11,7 @@ client:
   wazuh_version: "4.14.6"
   database_name: "demo_db"
   ingress:
-    zammad_host: "zammad.demo.mcaas.example.com"
-    ciso_host: "ciso.demo.mcaas.example.com"
+    zammad_host: "alala.demo.mcaas.example.com"
+    ciso_host: "strategos.demo.mcaas.example.com"
+    shuffle_host: "kydoimos.demo.mcaas.example.com"
+    wazuh_host: "deimos.demo.mcaas.example.com"

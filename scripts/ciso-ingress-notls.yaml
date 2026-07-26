@@ -17,7 +17,7 @@ metadata:
 spec:
   ingressClassName: alb
   rules:
-  - host: ciso.testcustomer.socom.co.il
+  - host: strategos.testcustomer.socom.co.il
     http:
       paths:
       - backend:
@@ -36,5 +36,5 @@ spec:
         pathType: Prefix
   tls:
   - hosts:
-    - ciso.testcustomer.socom.co.il
-    secretName: ciso-testcustomer-socom-co-il-tls
+    - strategos.testcustomer.socom.co.il
+    secretName: strategos-testcustomer-socom-co-il-tls

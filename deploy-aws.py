@@ -148,10 +148,10 @@ def load_aws_client_config(client_name: str | None) -> dict:
     }
 
     ingress = c.get("ingress", {}) or {}
-    zammad_host = ingress.get("zammad_host") or f"zammad.{c['domain']}"
-    ciso_host = ingress.get("ciso_host") or f"ciso.{c['domain']}"
-    shuffle_host = ingress.get("shuffle_host") or f"shuffle.{c['domain']}"
-    wazuh_host = ingress.get("wazuh_host") or f"wazuh.{c['domain']}"
+    zammad_host = ingress.get("zammad_host") or f"alala.{c['domain']}"
+    ciso_host = ingress.get("ciso_host") or f"strategos.{c['domain']}"
+    shuffle_host = ingress.get("shuffle_host") or f"kydoimos.{c['domain']}"
+    wazuh_host = ingress.get("wazuh_host") or f"deimos.{c['domain']}"
 
     aws_config = c.get("aws", {}) or {}
     acm_cert_arns = aws_config.get("acm_cert_arns", {}) or {}
@@ -1389,9 +1389,9 @@ def generate_certificate_manifest(service: str, namespace: str, domain: str) -> 
     """Generate a cert-manager Certificate manifest for a service.
 
     Args:
-        service: Service name (e.g., 'wazuh', 'ciso', 'shuffle', 'zammad')
+        service: Service name (e.g., 'deimos', 'strategos', 'kydoimos', 'alala')
         namespace: Kubernetes namespace for the certificate
-        domain: Full domain (e.g., 'wazuh.testcustomer.socom.co.il')
+        domain: Full domain (e.g., 'deimos.testcustomer.socom.co.il')
 
     Returns:
         YAML manifest string for the Certificate resource
@@ -2085,8 +2085,8 @@ def generate_environment_summary(cfg: dict):
         f"{env_prefix}_DJANGO_SECRET_KEY"
     ) or _get_secret_value(f"{prefix}-ciso-secret", ns["grc"], "django-secret-key")
 
-    zammad_host = ingress.get("zammad_host", f"zammad.{domain}")
-    ciso_host = ingress.get("ciso_host", f"ciso.{domain}")
+    zammad_host = ingress.get("zammad_host", f"alala.{domain}")
+    ciso_host = ingress.get("ciso_host", f"strategos.{domain}")
     zammad_url = f"https://{zammad_host}"
     ciso_url = f"https://{ciso_host}"
 
@@ -2130,12 +2130,12 @@ def generate_environment_summary(cfg: dict):
         "",
         "| Service | URL | Default Credentials |",
         "|---------|-----|---------------------|",
-        f"| **Zammad** (Ticketing) | [{zammad_url}]({zammad_url}) | `admin` / set on first login |",
-        f"| **CISO Assistant** (GRC) | [{ciso_url}]({ciso_url}) | `admin` / set on first login |",
+        f"| **Alala** (Zammad Ticketing) | [{zammad_url}]({zammad_url}) | `admin` / set on first login |",
+        f"| **Strategos** (CISO Assistant GRC) | [{ciso_url}]({ciso_url}) | `admin` / set on first login |",
         "",
         "## Web Interfaces (Port-Forward Required)",
         "",
-        "### Wazuh Dashboard",
+        "### Deimos (Wazuh Dashboard)",
         "```bash",
         f"kubectl port-forward svc/wazuh-dashboard -n {ns['wazuh']} 8443:5601",
         "```",
@@ -2143,7 +2143,7 @@ def generate_environment_summary(cfg: dict):
         "- **Username:** `admin`",
         "- **Password:** Change from default `MYPASSWORD_`",
         "",
-        "### Shuffle (SOAR)",
+        "### Kydoimos (Shuffle SOAR)",
         "```bash",
         f"kubectl port-forward svc/shuffle -n {ns['security-ops']} 3000:80",
         "```",

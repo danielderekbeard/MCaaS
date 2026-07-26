@@ -4,7 +4,7 @@
 # Replace placeholders:
 #   <prefix>          → client resource prefix (e.g., "acme")
 #   <prefix-managed-it> → client's managed-it namespace (e.g., "acme-managed-it")
-#   <zammad_host>     → client's Zammad ingress host (e.g., "zammad.acme.example.com")
+#   <zammad_host>     → client's Zammad ingress host (e.g., "alala.acme.example.com")
 #
 # Key notes:
 # - Redis sub-chart: cloudpirates-redis (replaced Bitnami in v16.0.0)

@@ -5,11 +5,11 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: shuffle-testcustomer-socom-co-il-tls
+  name: kydoimos-testcustomer-socom-co-il-tls
   namespace: security-ops
 spec:
   dnsNames:
-  - shuffle.testcustomer.socom.co.il
+  - kydoimos.testcustomer.socom.co.il
   issuerRef:
     kind: ClusterIssuer
     name: letsencrypt-cloudflare

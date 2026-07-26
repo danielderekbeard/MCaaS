@@ -50,8 +50,10 @@ DEFAULT_CONFIG = {
     "database_name": "mcaas",
     "wazuh_version": "4.14.6",
     "ingress": {
-        "zammad_host": "zammad.mcaas.local",
-        "ciso_host": "ciso.mcaas.local",
+        "zammad_host": "alala.mcaas.local",
+        "ciso_host": "strategos.mcaas.local",
+        "shuffle_host": "kydoimos.mcaas.local",
+        "wazuh_host": "deimos.mcaas.local",
     },
     "client_name": None,
     "env_prefix": "MCAAS",
@@ -124,10 +126,10 @@ def load_client_config(client_name):
     # Build ingress host mapping
     ingress_raw = c.get("ingress", {}) or {}
     ingress = {
-        "zammad_host": ingress_raw.get("zammad_host", f"zammad.{c['domain']}"),
-        "ciso_host": ingress_raw.get("ciso_host", f"ciso.{c['domain']}"),
-        "shuffle_host": ingress_raw.get("shuffle_host", f"shuffle.{c['domain']}"),
-        "wazuh_host": ingress_raw.get("wazuh_host", f"wazuh.{c['domain']}"),
+        "zammad_host": ingress_raw.get("zammad_host", f"alala.{c['domain']}"),
+        "ciso_host": ingress_raw.get("ciso_host", f"strategos.{c['domain']}"),
+        "shuffle_host": ingress_raw.get("shuffle_host", f"kydoimos.{c['domain']}"),
+        "wazuh_host": ingress_raw.get("wazuh_host", f"deimos.{c['domain']}"),
     }
 
     # Environment variable prefix: MCAAS, ACME, etc. (uppercased, dashes→underscores)
@@ -173,11 +175,7 @@ def _add_tls_skip(command):
     Note: ``--insecure-skip-tls-verify`` is a kubectl flag only — Helm does not
     support it (Helm reads TLS settings from the kubeconfig instead).
     """
-    if (
-        isinstance(command, list)
-        and len(command) >= 1
-        and command[0] == "kubectl"
-    ):
+    if isinstance(command, list) and len(command) >= 1 and command[0] == "kubectl":
         # Don't add the flag twice.
         if "--insecure-skip-tls-verify" not in command:
             command = command + ["--insecure-skip-tls-verify"]

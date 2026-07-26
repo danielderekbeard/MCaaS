@@ -46,7 +46,7 @@ ingress:
   enabled: true
   className: "nginx"
   hosts:
-    - host: zammad.demo.mcaas.example.com
+    - host: alala.demo.mcaas.example.com
       paths:
         - path: /
           pathType: ImplementationSpecific

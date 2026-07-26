@@ -48,10 +48,10 @@ DEFAULT_CONFIG = {
     "database_name": "mcaas_db",
     "wazuh_version": "4.14.6",
     "ingress": {
-        "zammad_host": "zammad.mcaas.example.com",
-        "ciso_host": "ciso.mcaas.example.com",
-        "shuffle_host": "shuffle.mcaas.example.com",
-        "wazuh_host": "wazuh.mcaas.example.com",
+        "zammad_host": "alala.mcaas.example.com",
+        "ciso_host": "strategos.mcaas.example.com",
+        "shuffle_host": "kydoimos.mcaas.example.com",
+        "wazuh_host": "deimos.mcaas.example.com",
     },
 }
 
@@ -69,7 +69,7 @@ def load_client_config(client_name: str | None) -> dict:
       - ``domain``               – domain suffix
       - ``database_name``        – PostgreSQL database name
       - ``wazuh_version``        – Wazuh version tag
-      - ``ingress``              – dict with ``zammad_host`` and ``ciso_host``
+      - ``ingress``              – dict with ``zammad_host``, ``ciso_host``, ``shuffle_host``, ``wazuh_host``
       - ``client_name``          – the client identifier (or ``None`` for default)
       - ``env_prefix``           – uppercase prefix for environment variables
       - ``client_dir``           – ``Path`` to ``clients/<name>/`` or ``None``
@@ -123,10 +123,10 @@ def load_client_config(client_name: str | None) -> dict:
     }
 
     ingress = c.get("ingress", {}) or {}
-    zammad_host = ingress.get("zammad_host") or f"zammad.{c['domain']}"
-    ciso_host = ingress.get("ciso_host") or f"ciso.{c['domain']}"
-    shuffle_host = ingress.get("shuffle_host") or f"shuffle.{c['domain']}"
-    wazuh_host = ingress.get("wazuh_host") or f"wazuh.{c['domain']}"
+    zammad_host = ingress.get("zammad_host") or f"alala.{c['domain']}"
+    ciso_host = ingress.get("ciso_host") or f"strategos.{c['domain']}"
+    shuffle_host = ingress.get("shuffle_host") or f"kydoimos.{c['domain']}"
+    wazuh_host = ingress.get("wazuh_host") or f"deimos.{c['domain']}"
 
     cfg = {
         "prefix": c["prefix"],
@@ -366,18 +366,21 @@ def ensure_openssl_on_path() -> None:
 def check_prerequisites():
     """Verify that required tools are installed.
 
-    In dry‑run mode we only need to log the check – the actual tools are not
+    In dry-run mode we only need to log the check -- the actual tools are not
     required because no commands will be executed.
     """
-    if globals().get("DRY_RUN", False):
-        logging.info("Dry‑run mode: skipping prerequisite tool checks.")
-        return
-
     # On Windows, ensure openssl from the Git bundle is on PATH.
     if IS_WINDOWS:
         ensure_openssl_on_path()
 
-    required_tools = ["kubectl", "helm", "git", "openssl"]
+    # In dry-run mode we still need kubectl for generating manifests
+    # (e.g. ``kubectl create secret --dry-run=client -o yaml``), but we
+    # skip the cluster connectivity check.
+    required_tools = (
+        ["kubectl"]
+        if globals().get("DRY_RUN", False)
+        else ["kubectl", "helm", "git", "openssl"]
+    )
     missing = []
 
     for tool in required_tools:
@@ -400,7 +403,11 @@ def check_kubectl_connectivity():
     Runs ``kubectl auth can-i create namespaces`` as a lightweight check.
     Exits early with a clear message if the kubeconfig is missing, malformed,
     or the credentials are rejected — preventing cryptic failures later.
+    In dry-run mode this check is skipped because there may be no live cluster.
     """
+    if globals().get("DRY_RUN", False):
+        logging.info("Dry-run mode: skipping kubectl connectivity check.")
+        return
     logging.info("Verifying kubectl connectivity...")
     result = run_command(
         ["kubectl", "auth", "can-i", "create", "namespaces"],
@@ -427,10 +434,15 @@ def check_kubectl_connectivity():
 def run_command(command, check=True, shell=False, cwd=None, input_data=None):
     """Runs a command and logs its output.
 
-    When ``DRY_RUN`` is enabled we add ``--dry-run=client`` to ``helm`` and
-    ``kubectl`` invocations so that no resources are actually created or
-    modified. The flag is appended only to list‑type commands to avoid breaking
-    string commands that may already contain their own options.
+    When ``DRY_RUN`` is enabled we log kubectl mutating commands and helm
+    install/upgrade commands without executing them, because ``kubectl apply
+    --dry-run=client`` still contacts the API server for OpenAPI validation
+    and resource discovery, and ``helm upgrade --install --dry-run=client``
+    also contacts the API server.  In a local Windows deployment with no
+    cluster, both of these fail.
+
+    Non-mutating kubectl commands (``get``, ``wait``, ``auth``, ``kustomize``,
+    ``logs``, ``exec``, etc.) are executed normally in dry-run mode.
 
     Args:
         command: List of command arguments (preferred) or string if shell=True
@@ -439,21 +451,38 @@ def run_command(command, check=True, shell=False, cwd=None, input_data=None):
         cwd: Working directory for the command
         input_data: String data to pass to stdin (e.g. for kubectl apply -f -)
     """
-    # Inject dry‑run flag for helm/kubectl when appropriate. For Helm we also
-    # strip any "--wait" flag because waiting for a resource that will never be
-    # created leads to a timeout in dry‑run mode.
     if isinstance(command, list) and globals().get("DRY_RUN", False):
-        # Helm commands: only apply dry‑run to actions that support it (install/upgrade).
-        # Helm repo commands (add, update, etc.) do not accept the flag.
+        # Helm upgrade/install: skip entirely in dry-run (needs API server).
         if command[0] == "helm" and ("upgrade" in command or "install" in command):
-            # Remove the "--wait" flag if present – waiting is irrelevant in dry‑run.
-            command = [c for c in command if c != "--wait"]
-            # Append the dry‑run flag (avoid duplicates)
-            if "--dry-run=client" not in command:
-                command = command + ["--dry-run=client"]
-        elif command[0] == "kubectl":
-            if "--dry-run=client" not in command:
-                command = command + ["--dry-run=client"]
+            cmd_str = " ".join(command)
+            logging.info(f"Dry-run: would run: {cmd_str}")
+            return subprocess.CompletedProcess(
+                args=command, returncode=0, stdout="", stderr=""
+            )
+        # kubectl mutating verbs: skip entirely in dry-run because even
+        # ``--dry-run=client`` contacts the API server for discovery.
+        _kubectl_mutating_verbs = {
+            "apply",
+            "create",
+            "delete",
+            "replace",
+            "patch",
+            "expose",
+            "rollout",
+            "scale",
+            "set",
+            "wait",  # Nothing to wait for in dry-run; resources don't exist
+        }
+        if (
+            command[0] == "kubectl"
+            and len(command) > 1
+            and command[1] in _kubectl_mutating_verbs
+        ):
+            cmd_str = " ".join(command)
+            logging.info(f"Dry-run: would run: {cmd_str}")
+            return subprocess.CompletedProcess(
+                args=command, returncode=0, stdout="", stderr=""
+            )
 
     cmd_str = " ".join(command) if isinstance(command, list) else command
     logging.info(f"Running: {cmd_str}")
@@ -500,12 +529,12 @@ def wait_for_resource(namespace, resource_name, timeout="5m"):
     not work reliably because StatefulSets often lack the ``ready`` condition.
     Instead, we wait for the pods belonging to the StatefulSet.
 
-    In dry‑run mode the resources are not actually created, so we skip the
+    In dry-run mode the resources are not actually created, so we skip the
     wait entirely.
     """
     if globals().get("DRY_RUN", False):
         logging.info(
-            f"Dry‑run: skipping wait for resource '{resource_name}' in namespace '{namespace}'."
+            f"Dry-run: skipping wait for resource '{resource_name}' in namespace '{namespace}'."
         )
         return
 
@@ -780,16 +809,146 @@ def clone_or_use_wazuh_repo(wazuh_dir):
     return wazuh_dir
 
 
+def deploy_ingress_controller(cfg):
+    """Deploy the NGINX Ingress Controller via Helm.
+
+    Installs the ``ingress-nginx`` Helm chart which provides a single
+    LoadBalancer entry point for all services. On local Kubernetes clusters
+    (Docker Desktop, Rancher Desktop, Minikube) the LoadBalancer service
+    will be assigned an external IP of ``127.0.0.1`` or ``localhost``,
+    making all ingress hosts accessible locally.
+
+    Args:
+        cfg: Client configuration dict from :func:`load_client_config`.
+    """
+    prefix = cfg["prefix"]
+    ns_ingress = "ingress-nginx"
+
+    logging.info("Installing NGINX Ingress Controller...")
+
+    # Create the ingress-nginx namespace (idempotent).
+    run_command(
+        ["kubectl", "create", "namespace", ns_ingress],
+        check=False,
+    )
+
+    run_command(
+        [
+            "helm",
+            "upgrade",
+            "--install",
+            f"{prefix}-ingress-nginx",
+            "ingress-nginx/ingress-nginx",
+            "--namespace",
+            ns_ingress,
+            "--set",
+            "controller.service.type=LoadBalancer",
+            "--set",
+            "controller.service.externalTrafficPolicy=Local",
+            "--set",
+            "controller.config.proxy-body-size=64m",
+            "--wait",
+            "--timeout",
+            "5m",
+        ]
+    )
+
+    logging.info("NGINX Ingress Controller installed successfully.")
+
+
+def deploy_ingress_resources(cfg):
+    """Create Ingress resources for services not managed by Helm.
+
+    Zammad and CISO Assistant already have ``ingress.enabled: true`` in
+    their Helm value files, so their Ingress resources are created
+    automatically during the Helm upgrade/install step. This function
+    creates Ingress resources for **Shuffle** and **Wazuh Dashboard**,
+    which do not have Helm-managed ingress configuration.
+
+    On local clusters (Docker Desktop, Rancher Desktop) the Ingress
+    controller's LoadBalancer IP is typically ``127.0.0.1``. To access
+    services by hostname, add entries to the hosts file (see the
+    deployment summary for details).
+
+    Args:
+        cfg: Client configuration dict from :func:`load_client_config`.
+    """
+    prefix = cfg["prefix"]
+    ns = cfg["namespaces"]
+    domain = cfg.get("domain", "mcaas.example.com")
+    ingress = cfg.get("ingress", {})
+
+    shuffle_host = ingress.get("shuffle_host", f"kydoimos.{domain}")
+    wazuh_host = ingress.get("wazuh_host", f"deimos.{domain}")
+
+    # --- Shuffle Ingress ---
+    shuffle_ingress = f"""apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {prefix}-shuffle-ingress
+  namespace: {ns["security-ops"]}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: {shuffle_host}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: shuffle
+                port:
+                  number: 80
+"""
+    shuffle_manifest = TMP_DIR / "shuffle-ingress.yaml"
+    shuffle_manifest.write_text(shuffle_ingress, encoding="utf-8")
+    logging.info(f"Applying Shuffle Ingress manifest ({shuffle_host})...")
+    run_command(["kubectl", "apply", "-f", str(shuffle_manifest)])
+
+    # --- Wazuh Dashboard Ingress ---
+    wazuh_ingress = f"""apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {prefix}-wazuh-ingress
+  namespace: {ns["wazuh"]}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: {wazuh_host}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: wazuh-dashboard
+                port:
+                  number: 5601
+"""
+    wazuh_manifest = TMP_DIR / "wazuh-ingress.yaml"
+    wazuh_manifest.write_text(wazuh_ingress, encoding="utf-8")
+    logging.info(f"Applying Wazuh Dashboard Ingress manifest ({wazuh_host})...")
+    run_command(["kubectl", "apply", "-f", str(wazuh_manifest)])
+
+    logging.info("Ingress resources for Shuffle and Wazuh Dashboard applied.")
+
+
 def deploy_wazuh(wazuh_dir, cfg):
     """Deploy Wazuh using ``kubectl apply``.
 
     The upstream Wazuh kustomization references TLS certificate files that are
     not present in a fresh clone. For production deployments on Windows we use
     a remote kustomize URL to avoid symlink and filesystem issues. However, when
-    running in **dry‑run** mode those remote manifests still attempt to load the
+    running in **dry-run** mode those remote manifests still attempt to load the
     missing files, causing ``kubectl apply`` to fail.
 
-    To make dry‑run reliable we fall back to the **local clone** (which we
+    To make dry-run reliable we fall back to the **local clone** (which we
     already create in ``.tmp/wazuh-kubernetes``) and generate empty placeholder
     certificate files via :func:`ensure_wazuh_certs`. This approach works on both
     Windows and POSIX platforms because the local path is under our control and
@@ -807,23 +966,23 @@ def deploy_wazuh(wazuh_dir, cfg):
 
     remote_kustomize = f"https://github.com/wazuh/wazuh-kubernetes//envs/local-env?ref=v{wazuh_version}"
 
-    # Determine whether we are in dry‑run mode.
+    # Determine whether we are in dry-run mode.
     dry_run = globals().get("DRY_RUN", False)
 
     if dry_run:
-        # In dry‑run we prefer the local clone because we can inject placeholder
+        # In dry-run we prefer the local clone because we can inject placeholder
         # certs. Ensure the clone exists – ``clone_or_use_wazuh_repo`` is called
         # earlier in ``main`` – and then generate the certs.
         if wazuh_dir and wazuh_dir.exists():
             ensure_wazuh_certs(wazuh_dir)
             kustomize_path = str(wazuh_dir / "envs" / "local-env")
-            logging.info("Dry‑run: using local Wazuh clone with placeholder TLS files.")
+            logging.info("Dry-run: using local Wazuh clone with placeholder TLS files.")
         else:
             # Fallback to remote if the clone is unavailable; this may still
             # error, but we log the situation for visibility.
             kustomize_path = remote_kustomize
             logging.warning(
-                "Dry‑run: local Wazuh clone missing; falling back to remote manifests (may fail)."
+                "Dry-run: local Wazuh clone missing; falling back to remote manifests (may fail)."
             )
     else:
         # Normal execution path.
@@ -870,14 +1029,46 @@ def deploy_wazuh(wazuh_dir, cfg):
     # the provisioner field is immutable — kustomize apply will fail if an
     # existing StorageClass has a different (immutable) provisioner.
     # Pre-deleting ensures the apply succeeds and lets us replace it after.
-    logging.info("Pre-deleting wazuh-storage StorageClass (immutable fields)...")
-    run_command(
-        ["kubectl", "delete", "storageclass", "wazuh-storage", "--ignore-not-found"],
-        check=False,
-    )
+    # In dry-run mode we skip this because there is no live cluster.
+    if dry_run:
+        logging.info("Dry-run: skipping pre-delete of wazuh-storage StorageClass.")
+    else:
+        logging.info("Pre-deleting wazuh-storage StorageClass (immutable fields)...")
+        run_command(
+            [
+                "kubectl",
+                "delete",
+                "storageclass",
+                "wazuh-storage",
+                "--ignore-not-found",
+            ],
+            check=False,
+        )
 
     # Execute the apply command.
-    run_command(["kubectl", "apply", "-k", kustomize_path])
+    # In dry-run mode we cannot use ``kubectl apply -k`` because kustomize
+    # contacts the API server for OpenAPI validation even with
+    # ``--dry-run=client --validate=false``.  Instead, we build the manifests
+    # locally with ``kubectl kustomize`` and apply them with ``-f -`` so the
+    # entire operation stays client-side.  ``run_command`` will automatically
+    # inject ``--dry-run=client --validate=false`` for the ``kubectl apply``.
+    if dry_run:
+        logging.info("Dry-run: building Wazuh manifests locally with kustomize...")
+        kustomize_result = run_command(
+            ["kubectl", "kustomize", kustomize_path],
+            check=False,
+        )
+        if kustomize_result and kustomize_result.returncode == 0:
+            run_command(
+                ["kubectl", "apply", "-f", "-"],
+                input_data=kustomize_result.stdout,
+            )
+        else:
+            logging.warning(
+                "Dry-run: could not build Wazuh kustomize manifests; skipping apply."
+            )
+    else:
+        run_command(["kubectl", "apply", "-k", kustomize_path])
 
     # Replace the Wazuh StorageClass for k3s compatibility.
     # The upstream local-env overlay creates a StorageClass with
@@ -885,23 +1076,33 @@ def deploy_wazuh(wazuh_dir, cfg):
     # We must delete and recreate because the provisioner field is immutable.
     # We also set WaitForFirstConsumer so the local-path provisioner knows
     # which node to provision volumes on before binding PVCs.
-    logging.info("Replacing wazuh-storage StorageClass for k3s compatibility...")
-    run_command(
-        ["kubectl", "delete", "storageclass", "wazuh-storage", "--ignore-not-found"],
-        check=False,
-    )
-    run_command(
-        ["kubectl", "apply", "-f", "-"],
-        input_data=(
-            "apiVersion: storage.k8s.io/v1\n"
-            "kind: StorageClass\n"
-            "metadata:\n"
-            "  name: wazuh-storage\n"
-            "provisioner: rancher.io/local-path\n"
-            "reclaimPolicy: Delete\n"
-            "volumeBindingMode: WaitForFirstConsumer\n"
-        ),
-    )
+    # In dry-run mode we skip this because there is no live cluster.
+    if dry_run:
+        logging.info("Dry-run: skipping wazuh-storage StorageClass replacement.")
+    else:
+        logging.info("Replacing wazuh-storage StorageClass for k3s compatibility...")
+        run_command(
+            [
+                "kubectl",
+                "delete",
+                "storageclass",
+                "wazuh-storage",
+                "--ignore-not-found",
+            ],
+            check=False,
+        )
+        run_command(
+            ["kubectl", "apply", "-f", "-"],
+            input_data=(
+                "apiVersion: storage.k8s.io/v1\n"
+                "kind: StorageClass\n"
+                "metadata:\n"
+                "  name: wazuh-storage\n"
+                "provisioner: rancher.io/local-path\n"
+                "reclaimPolicy: Delete\n"
+                "volumeBindingMode: WaitForFirstConsumer\n"
+            ),
+        )
 
 
 def load_env_file():
@@ -922,6 +1123,39 @@ def generate_password(length=24):
     """Generate a random password with letters, digits, and symbols."""
     charset = string.ascii_letters + string.digits + "!@#$%^&*"
     return "".join(secrets.choice(charset) for _ in range(length))
+
+
+def _generate_secret_yaml(secret_name, namespace, data_dict):
+    """Generate a Kubernetes Secret manifest as a YAML string.
+
+    This is a pure-Python replacement for
+    ``kubectl create secret generic <name> --from-literal=... --dry-run=client -o yaml``
+    and avoids any cluster connectivity, which makes it suitable for offline
+    dry-run mode on a local Windows machine.
+
+    Args:
+        secret_name: Name of the Secret object.
+        namespace: Namespace for the Secret.
+        data_dict: Mapping of key names to plaintext string values.
+
+    Returns:
+        A YAML string representing the Secret.
+    """
+    import base64
+    import yaml as _yaml  # PyYAML – guaranteed available (deploy.py imports it at top)
+
+    encoded = {k: base64.b64encode(v.encode()).decode() for k, v in data_dict.items()}
+    secret = {
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "metadata": {
+            "name": secret_name,
+            "namespace": namespace,
+        },
+        "type": "Opaque",
+        "data": encoded,
+    }
+    return _yaml.dump(secret, default_flow_style=False)
 
 
 def create_secrets(cfg: dict):
@@ -995,32 +1229,39 @@ def create_secrets(cfg: dict):
 
     # PostgreSQL secret (in the managed-it namespace)
     pg_secret_name = f"{prefix}-postgresql-secret"
-    proc = subprocess.run(
-        [
-            "kubectl",
-            "-n",
-            ns["managed-it"],
-            "create",
-            "secret",
-            "generic",
-            pg_secret_name,
-            f"--from-literal=postgres-password={postgres_pw}",
-            f"--from-literal=password={postgres_pw}",
-            "--dry-run=client",
-            "-o",
-            "yaml",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        logging.error(f"Failed to generate PostgreSQL secret manifest: {proc.stderr}")
-        raise RuntimeError("Failed to create PostgreSQL secret")
     if dry_run:
+        pg_manifest = _generate_secret_yaml(
+            pg_secret_name,
+            ns["managed-it"],
+            {"postgres-password": postgres_pw, "password": postgres_pw},
+        )
         logging.info(
-            f"Dry‑run: would apply PostgreSQL secret '{pg_secret_name}'. Manifest:\n{proc.stdout}"
+            f"Dry-run: would apply PostgreSQL secret '{pg_secret_name}'. Manifest:\n{pg_manifest}"
         )
     else:
+        proc = subprocess.run(
+            [
+                "kubectl",
+                "-n",
+                ns["managed-it"],
+                "create",
+                "secret",
+                "generic",
+                pg_secret_name,
+                f"--from-literal=postgres-password={postgres_pw}",
+                f"--from-literal=password={postgres_pw}",
+                "--dry-run=client",
+                "-o",
+                "yaml",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            logging.error(
+                f"Failed to generate PostgreSQL secret manifest: {proc.stderr}"
+            )
+            raise RuntimeError("Failed to create PostgreSQL secret")
         apply_proc = subprocess.run(
             ["kubectl", "apply", "-f", "-"], input=proc.stdout, text=True
         )
@@ -1037,32 +1278,42 @@ def create_secrets(cfg: dict):
     # the key name must be a valid env-var identifier (no dashes), hence the
     # separate SHUFFLE_OPENSEARCH_PASSWORD key.
     os_secret_name = f"{prefix}-opensearch-secret"
-    proc = subprocess.run(
-        [
-            "kubectl",
-            "-n",
-            ns["security-ops"],
-            "create",
-            "secret",
-            "generic",
-            os_secret_name,
-            f"--from-literal=opensearch-password={opensearch_pw}",
-            f"--from-literal=SHUFFLE_OPENSEARCH_PASSWORD={opensearch_pw}",
-            "--dry-run=client",
-            "-o",
-            "yaml",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        logging.error(f"Failed to generate OpenSearch secret manifest: {proc.stderr}")
-        raise RuntimeError("Failed to create OpenSearch secret")
     if dry_run:
+        os_manifest = _generate_secret_yaml(
+            os_secret_name,
+            ns["security-ops"],
+            {
+                "opensearch-password": opensearch_pw,
+                "SHUFFLE_OPENSEARCH_PASSWORD": opensearch_pw,
+            },
+        )
         logging.info(
-            f"Dry‑run: would apply OpenSearch secret '{os_secret_name}'. Manifest:\n{proc.stdout}"
+            f"Dry-run: would apply OpenSearch secret '{os_secret_name}'. Manifest:\n{os_manifest}"
         )
     else:
+        proc = subprocess.run(
+            [
+                "kubectl",
+                "-n",
+                ns["security-ops"],
+                "create",
+                "secret",
+                "generic",
+                os_secret_name,
+                f"--from-literal=opensearch-password={opensearch_pw}",
+                f"--from-literal=SHUFFLE_OPENSEARCH_PASSWORD={opensearch_pw}",
+                "--dry-run=client",
+                "-o",
+                "yaml",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            logging.error(
+                f"Failed to generate OpenSearch secret manifest: {proc.stderr}"
+            )
+            raise RuntimeError("Failed to create OpenSearch secret")
         apply_proc = subprocess.run(
             ["kubectl", "apply", "-f", "-"], input=proc.stdout, text=True
         )
@@ -1078,31 +1329,36 @@ def create_secrets(cfg: dict):
     # "redis-password" containing the Redis auth password.
     redis_pw = os.environ.get(env_redis, "zammad")
     redis_secret_name = f"{prefix}-zammad-redis-pass"
-    proc = subprocess.run(
-        [
-            "kubectl",
-            "-n",
-            ns["managed-it"],
-            "create",
-            "secret",
-            "generic",
-            redis_secret_name,
-            f"--from-literal=redis-password={redis_pw}",
-            "--dry-run=client",
-            "-o",
-            "yaml",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        logging.error(f"Failed to generate Redis secret manifest: {proc.stderr}")
-        raise RuntimeError("Failed to create Redis secret")
     if dry_run:
+        redis_manifest = _generate_secret_yaml(
+            redis_secret_name,
+            ns["managed-it"],
+            {"redis-password": redis_pw},
+        )
         logging.info(
-            f"Dry‑run: would apply Redis secret '{redis_secret_name}'. Manifest:\n{proc.stdout}"
+            f"Dry-run: would apply Redis secret '{redis_secret_name}'. Manifest:\n{redis_manifest}"
         )
     else:
+        proc = subprocess.run(
+            [
+                "kubectl",
+                "-n",
+                ns["managed-it"],
+                "create",
+                "secret",
+                "generic",
+                redis_secret_name,
+                f"--from-literal=redis-password={redis_pw}",
+                "--dry-run=client",
+                "-o",
+                "yaml",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            logging.error(f"Failed to generate Redis secret manifest: {proc.stderr}")
+            raise RuntimeError("Failed to create Redis secret")
         apply_proc = subprocess.run(
             ["kubectl", "apply", "-f", "-"], input=proc.stdout, text=True
         )
@@ -1118,36 +1374,41 @@ def create_secrets(cfg: dict):
     # PostgreSQL in the 'managed-it' namespace.  Kubernetes secrets are
     # namespace-scoped, so we create the same PostgreSQL secret in the 'grc'
     # namespace as well.
-    proc = subprocess.run(
-        [
-            "kubectl",
-            "-n",
-            ns["grc"],
-            "create",
-            "secret",
-            "generic",
-            pg_secret_name,
-            f"--from-literal=postgres-password={postgres_pw}",
-            f"--from-literal=password={postgres_pw}",
-            "--dry-run=client",
-            "-o",
-            "yaml",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        logging.error(
-            f"Failed to generate PostgreSQL secret for {ns['grc']} namespace: {proc.stderr}"
-        )
-        raise RuntimeError(
-            f"Failed to create PostgreSQL secret for {ns['grc']} namespace"
-        )
     if dry_run:
+        pg_grc_manifest = _generate_secret_yaml(
+            pg_secret_name,
+            ns["grc"],
+            {"postgres-password": postgres_pw, "password": postgres_pw},
+        )
         logging.info(
-            f"Dry‑run: would apply PostgreSQL secret in {ns['grc']} namespace. Manifest:\n{proc.stdout}"
+            f"Dry-run: would apply PostgreSQL secret in {ns['grc']} namespace. Manifest:\n{pg_grc_manifest}"
         )
     else:
+        proc = subprocess.run(
+            [
+                "kubectl",
+                "-n",
+                ns["grc"],
+                "create",
+                "secret",
+                "generic",
+                pg_secret_name,
+                f"--from-literal=postgres-password={postgres_pw}",
+                f"--from-literal=password={postgres_pw}",
+                "--dry-run=client",
+                "-o",
+                "yaml",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            logging.error(
+                f"Failed to generate PostgreSQL secret for {ns['grc']} namespace: {proc.stderr}"
+            )
+            raise RuntimeError(
+                f"Failed to create PostgreSQL secret for {ns['grc']} namespace"
+            )
         apply_proc = subprocess.run(
             ["kubectl", "apply", "-f", "-"], input=proc.stdout, text=True
         )
@@ -1172,31 +1433,38 @@ def create_secrets(cfg: dict):
         logging.info(f"Generated {env_django} and appended to {env_file}")
 
     ciso_secret_name = f"{prefix}-ciso-secret"
-    proc = subprocess.run(
-        [
-            "kubectl",
-            "-n",
-            ns["grc"],
-            "create",
-            "secret",
-            "generic",
-            ciso_secret_name,
-            f"--from-literal=django-secret-key={django_secret}",
-            "--dry-run=client",
-            "-o",
-            "yaml",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        logging.error(f"Failed to generate CISO Assistant Django secret: {proc.stderr}")
-        raise RuntimeError("Failed to create CISO Assistant Django secret")
     if dry_run:
+        ciso_manifest = _generate_secret_yaml(
+            ciso_secret_name,
+            ns["grc"],
+            {"django-secret-key": django_secret},
+        )
         logging.info(
-            f"Dry‑run: would apply CISO Assistant Django secret '{ciso_secret_name}'. Manifest:\n{proc.stdout}"
+            f"Dry-run: would apply CISO Assistant Django secret '{ciso_secret_name}'. Manifest:\n{ciso_manifest}"
         )
     else:
+        proc = subprocess.run(
+            [
+                "kubectl",
+                "-n",
+                ns["grc"],
+                "create",
+                "secret",
+                "generic",
+                ciso_secret_name,
+                f"--from-literal=django-secret-key={django_secret}",
+                "--dry-run=client",
+                "-o",
+                "yaml",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            logging.error(
+                f"Failed to generate CISO Assistant Django secret: {proc.stderr}"
+            )
+            raise RuntimeError("Failed to create CISO Assistant Django secret")
         apply_proc = subprocess.run(
             ["kubectl", "apply", "-f", "-"], input=proc.stdout, text=True
         )
@@ -1278,11 +1546,15 @@ def generate_environment_summary(cfg: dict):
         f"{env_prefix}_DJANGO_SECRET_KEY"
     ) or _get_secret_value(f"{prefix}-ciso-secret", ns["grc"], "django-secret-key")
 
-    # --- Build ingress URLs ---
-    zammad_host = ingress.get("zammad_host", f"zammad.{domain}")
-    ciso_host = ingress.get("ciso_host", f"ciso.{domain}")
-    zammad_url = f"https://{zammad_host}"
-    ciso_url = f"https://{ciso_host}"
+    # --- Build ingress URLs (HTTP for local deployments — no cert-manager) ---
+    zammad_host = ingress.get("zammad_host", f"alala.{domain}")
+    ciso_host = ingress.get("ciso_host", f"strategos.{domain}")
+    shuffle_host = ingress.get("shuffle_host", f"kydoimos.{domain}")
+    wazuh_host = ingress.get("wazuh_host", f"deimos.{domain}")
+    zammad_url = f"http://{zammad_host}"
+    ciso_url = f"http://{ciso_host}"
+    shuffle_url = f"http://{shuffle_host}"
+    wazuh_url = f"http://{wazuh_host}"
 
     # --- Internal service addresses ---
     pg_host = f"{prefix}-postgresql.{ns['managed-it']}.svc.cluster.local"
@@ -1309,33 +1581,34 @@ def generate_environment_summary(cfg: dict):
         "",
         "## Web Interfaces (Ingress)",
         "",
+        "All services are exposed via the NGINX Ingress Controller.  Access them",
+        "by adding the host entries to your hosts file (see Local Access Setup below).",
+        "",
         "| Service | URL | Default Credentials |",
         "|---------|-----|---------------------|",
-        f"| **Zammad** (Ticketing) | [{zammad_url}]({zammad_url}) | `admin` / set on first login |",
-        f"| **CISO Assistant** (GRC) | [{ciso_url}]({ciso_url}) | `admin` / set on first login |",
+        f"| **Alala** (Zammad Ticketing) | [{zammad_url}]({zammad_url}) | `admin` / set on first login |",
+        f"| **Strategos** (CISO Assistant GRC) | [{ciso_url}]({ciso_url}) | `admin` / set on first login |",
+        f"| **Kydoimos** (Shuffle SOAR) | [{shuffle_url}]({shuffle_url}) | OpenID / configured at first setup |",
+        f"| **Deimos** (Wazuh SIEM) | [{wazuh_url}]({wazuh_url}) | `admin` / `MYPASSWORD_` — change immediately |",
         "",
-        "## Web Interfaces (Port-Forward Required)",
+        "## Local Access Setup (Windows)",
         "",
-        "These services are not exposed via ingress and require `kubectl port-forward`:",
+        "Add the following entries to your Windows hosts file so that the",
+        "ingress domains resolve to the LoadBalancer IP:",
         "",
-        "### Wazuh Dashboard",
+        "1.  Get the LoadBalancer IP:",
+        "    ```bash",
+        "    kubectl get svc -n ingress-nginx",
+        "    ```",
+        "    For Docker Desktop / Rancher Desktop the EXTERNAL-IP is typically",
+        "    `127.0.0.1` or `localhost`.",
         "",
-        "```bash",
-        f"kubectl port-forward svc/wazuh-dashboard -n {ns['wazuh']} 8443:5601",
-        "```",
+        "2.  Edit `C:\\Windows\\System32\\drivers\\etc\\hosts` (run as Administrator):",
+        f"    ```",
+        f"    127.0.0.1 {zammad_host} {ciso_host} {shuffle_host} {wazuh_host}",
+        f"    ```",
         "",
-        "- **URL:** <https://localhost:8443>",
-        "- **Username:** `admin`",
-        "- **Password:** Change from default `MYPASSWORD_` — see Wazuh secret below",
-        "",
-        "### Shuffle (SOAR)",
-        "",
-        "```bash",
-        f"kubectl port-forward svc/shuffle -n {ns['security-ops']} 3000:80",
-        "```",
-        "",
-        "- **URL:** <http://localhost:3000>",
-        "- **Authentication:** OpenID / configured at first setup",
+        "3.  Open any of the URLs listed above in your browser.",
         "",
         "---",
         "",
@@ -1409,6 +1682,7 @@ def generate_environment_summary(cfg: dict):
         f"| Security Ops / OpenSearch / Shuffle | `{ns['security-ops']}` |",
         f"| GRC / CISO Assistant | `{ns['grc']}` |",
         f"| Wazuh (Manager + Dashboard + Indexer) | `{ns['wazuh']}` |",
+        f"| NGINX Ingress Controller | `ingress-nginx` |",
         "",
         "---",
         "",
@@ -1421,10 +1695,14 @@ def generate_environment_summary(cfg: dict):
         f"| `{prefix}-shuffle` | `oci://ghcr.io/shuffle/charts/shuffle` | `{ns['security-ops']}` |",
         f"| `{prefix}-zammad` | `oci://ghcr.io/zammad/charts/zammad` | `{ns['managed-it']}` |",
         f"| `{prefix}-ciso` | `oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant` | `{ns['grc']}` |",
+        f"| `ingress-nginx` | `ingress-nginx/ingress-nginx` | `ingress-nginx` |",
         "",
         "---",
         "",
         "## Port-Forward Quick Reference",
+        "",
+        "Prefer the Ingress URLs above for local access.  These commands are",
+        "provided as fallbacks for debugging or when ingress is unavailable:",
         "",
         "```bash",
         "# Zammad (if ingress is disabled)",
@@ -1468,15 +1746,14 @@ def generate_environment_summary(cfg: dict):
     print(f"  Prefix:      {prefix}")
     print(f"  Domain:      {domain}")
     print()
-    print("  Web Interfaces:")
-    print(f"    Zammad:          {zammad_url}")
-    print(f"    CISO Assistant:  {ciso_url}")
-    print(
-        f"    Wazuh Dashboard: kubectl port-forward svc/wazuh-dashboard -n {ns['wazuh']} 8443:5601"
-    )
-    print(
-        f"    Shuffle:         kubectl port-forward svc/shuffle -n {ns['security-ops']} 3000:80"
-    )
+    print("  Web Interfaces (via Ingress):")
+    print(f"    Zammad:           {zammad_url}")
+    print(f"    CISO Assistant:   {ciso_url}")
+    print(f"    Shuffle:          {shuffle_url}")
+    print(f"    Wazuh Dashboard: {wazuh_url}")
+    print()
+    print("  Local Access — add to your hosts file:")
+    print(f"    127.0.0.1 {zammad_host} {ciso_host} {shuffle_host} {wazuh_host}")
     print()
     print(f"  Secrets & Credentials:")
     print(f"    PostgreSQL password: {postgres_pw}")
@@ -1505,7 +1782,7 @@ def _create_database(pod_name, namespace, db_name, secret_name, secret_key):
     """
     dry_run = globals().get("DRY_RUN", False)
     if dry_run:
-        logging.info(f"Dry‑run: would create database '{db_name}' in PostgreSQL.")
+        logging.info(f"Dry-run: would create database '{db_name}' in PostgreSQL.")
         return
 
     logging.info(f"Ensuring database '{db_name}' exists in PostgreSQL...")
@@ -1571,17 +1848,17 @@ def _create_database(pod_name, namespace, db_name, secret_name, secret_key):
 def main():
     """Main deployment logic.
 
-    Parses command‑line arguments to configure the script (e.g. ``--dry-run``,
+    Parses command-line arguments to configure the script (e.g. ``--dry-run``,
     ``--client``). When ``--client`` is provided, the deployment uses a
-    client‑specific configuration loaded from ``clients/<name>/config.yaml``,
-    enabling isolated multi‑tenant deployments on the same cluster.
+    client-specific configuration loaded from ``clients/<name>/config.yaml``,
+    enabling isolated multi-tenant deployments on the same cluster.
     """
     # Argument parsing
     parser = argparse.ArgumentParser(description="Deploy MCaaS stack")
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Run deployment in dry‑run mode (no changes applied)",
+        help="Run deployment in dry-run mode (no changes applied)",
     )
     parser.add_argument(
         "--client",
@@ -1591,7 +1868,7 @@ def main():
     )
     args = parser.parse_args()
 
-    # Set global flag for dry‑run mode
+    # Set global flag for dry-run mode
     globals()["DRY_RUN"] = args.dry_run
 
     # Load client configuration (DEFAULT_CONFIG when --client is omitted)
@@ -1624,8 +1901,18 @@ def main():
             client_ns_file = cfg["client_dir"] / "namespaces.yaml"
             run_command(["kubectl", "apply", "-f", str(client_ns_file)])
         else:
-            # Default deployment — use the base kustomize directory
-            run_command(["kubectl", "apply", "-k", str(PROJECT_ROOT / "deploy")])
+            # Default deployment — apply individual manifest files instead of
+            # kustomize, because ``kubectl apply -k`` contacts the API server
+            # for OpenAPI validation even with ``--dry-run=client``, which
+            # fails when no cluster is reachable (e.g. local Windows dry-run).
+            deploy_dir = PROJECT_ROOT / "deploy"
+            manifest_files = sorted(deploy_dir.glob("*.yaml"))
+            # Exclude kustomization.yaml — it is not a standalone resource.
+            manifest_files = [
+                f for f in manifest_files if f.name != "kustomization.yaml"
+            ]
+            for manifest in manifest_files:
+                run_command(["kubectl", "apply", "-f", str(manifest)])
 
         # Create required Kubernetes secrets (must happen BEFORE Helm installs)
         logging.info("Creating required Kubernetes secrets...")
@@ -1646,7 +1933,21 @@ def main():
             ],
             check=False,
         )
+        run_command(
+            [
+                "helm",
+                "repo",
+                "add",
+                "ingress-nginx",
+                "https://kubernetes.github.io/ingress-nginx",
+            ],
+            check=False,
+        )
         run_command(["helm", "repo", "update"])
+
+        # Deploy NGINX Ingress Controller before services so ingressClassName
+        # "nginx" is available when Helm charts create their Ingress objects.
+        deploy_ingress_controller(cfg)
 
         logging.info("Deploying PostgreSQL...")
         run_command(
@@ -1822,6 +2123,10 @@ def main():
             ]
         )
         wait_for_resource(ns["grc"], f"{prefix}-ciso")
+
+        # Deploy Ingress resources for Shuffle and Wazuh Dashboard.
+        # (Zammad and CISO Assistant ingress are managed by their Helm charts.)
+        deploy_ingress_resources(cfg)
 
         logging.info("Deployment complete!")
 
