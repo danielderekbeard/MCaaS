@@ -17,6 +17,18 @@ stringData:
   # Zoho SMTP credentials - format: [smtp.zoho.com]:587 username:password
   SASL_PASSWD: "[smtp.zoho.com]:587 hello@danieldbeard.com:GLJkJ6cWcHLW"
 ---
+# rsyslog config to route mail.* logs to /var/log/postfix.log
+# Without this, delivery logs from smtp/pickup/cleanup/qmgr go to stdout only
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rsyslog-postfix
+  namespace: security-ops
+data:
+  postfix.conf: |
+    $AddUnixListenSocket /var/spool/postfix/dev/log
+    mail.* /var/log/postfix.log
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -82,6 +94,19 @@ spec:
           value: "permit_mynetworks, reject_unauth_destination"
         - name: POSTFIX_smtpd_recipient_restrictions
           value: "permit_mynetworks, reject_unauth_destination"
+        # Logging - syslog_facility=mail is critical for delivery logs to appear
+        # (image defaults to local0 which rsyslog doesn't route to /var/log/postfix.log)
+        - name: POSTFIX_syslog_facility
+          value: "mail"
+        - name: POSTFIX_maillog_file
+          value: "/var/log/postfix.log"
+        # Debug logging for Zoho SMTP relay
+        - name: POSTFIX_debug_peer_level
+          value: "3"
+        - name: POSTFIX_debug_peer_list
+          value: "smtp.zoho.com"
+        - name: POSTFIX_smtp_tls_loglevel
+          value: "1"
         # Message size and retry timing
         - name: POSTFIX_message_size_limit
           value: "10240000"
@@ -103,6 +128,10 @@ spec:
         # Zoho also checks the From: header inside message DATA, not just the envelope sender
         - name: POSTMAP_generic
           value: "@socom.co.il hello@danieldbeard.com"
+        volumeMounts:
+        - name: rsyslog-config
+          mountPath: /etc/rsyslog.d/postfix.conf
+          subPath: postfix.conf
         ports:
         - containerPort: 25
           name: smtp
@@ -113,6 +142,10 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "200m"
+      volumes:
+      - name: rsyslog-config
+        configMap:
+          name: rsyslog-postfix
 ---
 apiVersion: v1
 kind: Service
