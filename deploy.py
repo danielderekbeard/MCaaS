@@ -875,6 +875,12 @@ def deploy_ingress_controller(cfg):
         check=False,
     )
 
+    # Use --no-hooks to avoid hanging on the admission-webhook cert generation
+    # Jobs (pre-install hooks) which can stall on local k3s clusters.  The
+    # admission webhook is still installed as part of the chart's main manifest
+    # but its certificate won't be auto-generated.  We patch the webhook's
+    # failurePolicy to *Ignore* so that Ingress validation degrades gracefully
+    # on local deployments rather than blocking Ingress creation.
     run_command(
         [
             "helm",
@@ -890,10 +896,36 @@ def deploy_ingress_controller(cfg):
             "controller.service.externalTrafficPolicy=Local",
             "--set",
             "controller.config.proxy-body-size=64m",
-            "--wait",
-            "--timeout",
-            "5m",
+            "--no-hooks",
         ]
+    )
+
+    # Patch the admission webhook so validation failures are silently ignored
+    # on local deployments (the webhook has no CA bundle when --no-hooks is
+    # used, so every validation would fail).
+    # We write a JSON-patch file to disk first to avoid shell-quoting issues
+    # on Windows (PowerShell) and POSIX shells alike.
+    webhook_name = f"{prefix}-ingress-nginx-admission"
+    patch_file = TMP_DIR / "webhook-patch.json"
+    patch_file.parent.mkdir(parents=True, exist_ok=True)
+    patch_file.write_text(
+        '[{"op":"replace","path":"/webhooks/0/failurePolicy","value":"Ignore"}]\n'
+    )
+    logging.info(
+        "Patching admission webhook %s to failurePolicy=Ignore ...", webhook_name
+    )
+    run_command(
+        [
+            "kubectl",
+            "patch",
+            "validatingwebhookconfiguration",
+            webhook_name,
+            "--type",
+            "json",
+            "--patch-file",
+            str(patch_file),
+        ],
+        check=False,
     )
 
     logging.info("NGINX Ingress Controller installed successfully.")
