@@ -1,0 +1,6 @@
+<integration>
+  <name>custom</name>
+  <hook_url>http://shuffle-backend.security-ops.svc.cluster.local:5001/api/v1/hooks/webhook_4ec040d0-2ba5-4135-bf69-050cad1d115b</hook_url>
+  <level>3</level>
+  <alert_format>json</alert_format>
+</integration>
