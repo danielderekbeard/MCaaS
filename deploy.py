@@ -397,6 +397,49 @@ def check_prerequisites():
     logging.info("All prerequisites are available.")
 
 
+def select_local_context():
+    """Switch kubectl to a local cluster context if available.
+
+    On Windows (Rancher Desktop / Docker Desktop) we prefer the local
+    development cluster over any remote EKS context that may be lingering
+    in the kubeconfig.  The function tries contexts in priority order
+    and switches if the current context isn't already a known local one.
+    """
+    local_contexts = ["rancher-desktop", "docker-desktop", "minikube"]
+
+    # Check current context
+    result = run_command(["kubectl", "config", "current-context"], check=False)
+    current = (result.stdout or "").strip() if result.returncode == 0 else ""
+
+    if current in local_contexts:
+        logging.info(f"Already using local context: {current}")
+        return
+
+    # List available contexts
+    result = run_command(
+        ["kubectl", "config", "get-contexts", "-o", "name"], check=False
+    )
+    if result.returncode != 0:
+        logging.warning("Could not list kubectl contexts — skipping context selection.")
+        return
+
+    available = [c.strip() for c in (result.stdout or "").splitlines() if c.strip()]
+
+    for preferred in local_contexts:
+        if preferred in available:
+            logging.info(f"Switching kubectl context to local cluster: {preferred}")
+            run_command(["kubectl", "config", "use-context", preferred], check=False)
+            return
+
+    logging.warning(
+        "No local Kubernetes context found (rancher-desktop / docker-desktop / minikube)."
+    )
+    logging.warning("Current context: %s", current or "(unknown)")
+    logging.warning(
+        "If deploying to a local cluster, switch context manually before running."
+    )
+
+
 def check_kubectl_connectivity():
     """Verify that kubectl can authenticate to the cluster.
 
@@ -1890,6 +1933,9 @@ def main():
 
         # Verify prerequisites
         check_prerequisites()
+
+        # For local deployments, switch to a local k8s context if available
+        select_local_context()
 
         # Verify kubectl can authenticate to the cluster
         check_kubectl_connectivity()
