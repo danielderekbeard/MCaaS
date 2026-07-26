@@ -62,8 +62,13 @@ spec:
         - name: POSTFIX_smtp_sasl_tls_security_options
           value: "noanonymous"
         # Sender rewriting - Zoho requires envelope sender to match SASL user
+        # sender_canonical_maps rewrites envelope sender on local submission
         - name: POSTFIX_sender_canonical_maps
           value: "hash:/etc/postfix/sender_canonical"
+        # smtp_generic_maps rewrites BOTH envelope AND headers at SMTP delivery time
+        # This is critical: Zoho checks the From: header in message DATA, not just envelope
+        - name: POSTFIX_smtp_generic_maps
+          value: "hash:/etc/postfix/generic"
         # TLS - mandatory for Zoho port 587 (STARTTLS)
         - name: POSTFIX_smtp_tls_security_level
           value: "encrypt"
@@ -93,6 +98,10 @@ spec:
         # Sender canonical mapping - rewrite all @socom.co.il senders to Zoho-authenticated user
         # Zoho rejects mail if envelope sender doesn't match the SASL-authenticated account
         - name: POSTMAP_sender_canonical
+          value: "@socom.co.il hello@danieldbeard.com"
+        # Generic mapping - rewrites addresses in both envelope AND headers at SMTP delivery
+        # Zoho also checks the From: header inside message DATA, not just the envelope sender
+        - name: POSTMAP_generic
           value: "@socom.co.il hello@danieldbeard.com"
         ports:
         - containerPort: 25
