@@ -51,6 +51,7 @@ ingress domains resolve to the LoadBalancer IP:
 | **OpenSearch** | `mcaas-opensearch.security-ops.svc.cluster.local` | 9200 | REST API (HTTPS) |
 | **Zammad Redis** | `mcaas-zammad-redis.managed-it.svc.cluster.local` | 6379 | Session/cache store |
 | **Shuffle Backend** | `shuffle.security-ops.svc.cluster.local` | 80 | SOAR engine |
+| **SMTP Relay** | `smtp-relay.security-ops.svc.cluster.local` | 25 | Postfix relay → Zoho Mail |
 
 ---
 
@@ -63,6 +64,7 @@ ingress domains resolve to the LoadBalancer IP:
 | `mcaas-zammad-redis-pass` | `managed-it` | `redis-password` |
 | `mcaas-postgresql-secret` | `grc` | `postgres-password`, `password` (for CISO Assistant) |
 | `mcaas-ciso-secret` | `grc` | `django-secret-key` |
+| `zoho-smtp-secret` | `security-ops` | `SASL_PASSWD` (Zoho SMTP auth) |
 
 ---
 
@@ -101,6 +103,14 @@ ingress domains resolve to the LoadBalancer IP:
 
 - **OpenSearch connection:** uses `mcaas-opensearch-secret` (key `SHUFFLE_OPENSEARCH_PASSWORD`)
 - **OpenSearch URL:** `mcaas-opensearch.security-ops.svc.cluster.local:9200`
+
+### SMTP Relay (Postfix → Zoho)
+
+- **Host:** `smtp-relay.security-ops.svc.cluster.local:25`
+- **Upstream relay:** `smtp.zoho.com:587` (STARTTLS + SASL auth)
+- **Zoho auth user:** `hello@danieldbeard.com`
+- **Sender rewrite:** `@socom.co.il` → `hello@danieldbeard.com` (both envelope and headers via `smtp_generic_maps`)
+- **Secret:** `zoho-smtp-secret` in `security-ops` namespace (key: `SASL_PASSWD`)
 
 ---
 
@@ -152,6 +162,9 @@ kubectl port-forward svc/mcaas-postgresql -n managed-it 5432:5432
 
 # OpenSearch (debugging)
 kubectl port-forward svc/mcaas-opensearch -n security-ops 9200:9200
+
+# SMTP Relay (debugging)
+kubectl port-forward svc/smtp-relay -n security-ops 1025:25
 ```
 
 ---
