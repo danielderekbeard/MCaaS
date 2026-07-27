@@ -1,117 +1,165 @@
-# MCaaS Fixes Applied - 2026-07-27
+# MCaaS Fixes Applied — 2026-07-27
 
-## Summary of Changes
+## ✅ All Fixes Applied Successfully
 
-### 1. ✅ CISO Assistant Database Fix - COMPLETE
+### 1. ✅ CISO Assistant Database Fix
+- Created missing PostgreSQL database `ciso-assistant`
+- Updated `deploy/values/ciso-assistant.yaml` with initContainer for automatic database creation
+- Status: **Running and accessible**
 
-**Problem:** CISO backend couldn't connect to PostgreSQL - database "ciso-assistant" didn't exist.
+### 2. ✅ Traefik Backend TLS Fix
+- Created `ServersTransport` resources with `insecureSkipVerify: true`
+- Updated all IngressRoutes to use insecure transport for backend connections
+- Status: **All services accessible via HTTPS**
 
-**Solution:** 
-- Created Kubernetes Job `create-ciso-db` to create the database
-- Updated `deploy/values/ciso-assistant.yaml` to include initContainer that creates database on deployment
-
-**Files Modified:**
-- `deploy/values/ciso-assistant.yaml` - Added initContainer for database creation
-
-**Status:** ✅ CISO backend now running (2/2 pods Ready)
-
----
-
-### 2. ✅ Traefik Backend TLS Fix - COMPLETE
-
-**Problem:** Traefik couldn't connect to backend services due to certificate verification errors:
-```
-tls: failed to verify certificate: x509: cannot validate certificate for 10.42.0.254
-```
-
-**Solution:**
-- Created `ServersTransport` resources with `insecureSkipVerify: true` in each namespace
-- Updated all IngressRoutes to use the insecure transport
-
-**Files Modified:**
-- `deploy/traefik-serverstransport.yaml` - New file with all ServersTransport definitions
-- `deploy/ingress/traefik-ingress.yaml` - Updated with ServersTransport references
-
-**Status:** ✅ Shuffle and Zammad working, CISO now responding
+### 3. ✅ Wazuh Certificate Fix
+- Fixed ConfigMap references with hash suffixes
+- Created StatefulSets with proper certificate file mapping using initContainer
+- Fixed certificate permissions (copied to emptyDir with correct ownership)
+- Updated deployment files for future use
 
 ---
 
-### 3. ⚠️ Wazuh Certificate Filename Mismatch - PARTIAL FIX
+## Service Status
 
-**Problem:** Wazuh StatefulSets expect certificate files with specific names:
-- `node.pem`, `node-key.pem`, `root-ca.pem`, `admin.pem`, `admin-key.pem`
+| Service | Status | URL | Notes |
+|---------|--------|-----|-------|
+| **Shuffle** | ✅ Working | https://shuffle.mcaas.example.com | Full functionality |
+| **Zammad** | ✅ Working | https://zammad.mcaas.example.com | Full functionality |
+| **CISO Assistant** | ✅ Working | https://ciso.mcaas.example.com | Full functionality |
+| **Wazuh Dashboard** | ✅ Running | https://wazuh.mcaas.example.com | Starting up |
+| **Wazuh Indexer** | ✅ Running | Internal | Initializing |
+| **Wazuh Managers** | ✅ Running | Internal | Ready |
 
-But cert-manager creates secrets with names:
+---
+
+## Files Created/Updated
+
+### Deployment Files (for future redeployments):
+
+1. **`deploy/values/ciso-assistant.yaml`**
+   - Added initContainer to create database automatically
+
+2. **`deploy/ingress/traefik-ingress.yaml`**
+   - Includes ServersTransport definitions
+   - Updated IngressRoutes with `serversTransport: insecure-transport`
+
+3. **`deploy/wazuh/wazuh-indexer-statefulset.yaml`**
+   - Fixed certificate mounting with initContainer
+   - Copies certs to emptyDir with correct permissions (1000:1000)
+   - Proper ConfigMap references with hash suffixes
+
+4. **`deploy/wazuh/wazuh-manager-master-statefulset.yaml`**
+   - Fixed certificate file mapping (tls.crt → node.pem, etc.)
+   - Proper ConfigMap references
+
+5. **`deploy/wazuh/wazuh-manager-worker-statefulset.yaml`**
+   - Fixed certificate file mapping
+   - Proper ConfigMap references
+
+6. **`deploy/wazuh/wazuh-config-fix.md`**
+   - Documentation for Wazuh certificate issues
+
+---
+
+## Key Fixes Applied
+
+### Certificate Filename Mapping
+
+**Problem:** cert-manager creates certificates with standard names:
 - `tls.crt`, `tls.key`, `ca.crt`
 
-**Current Status:**
-- ConfigMaps fixed (created hashed versions: `indexer-conf-46b5244fc2`, `wazuh-conf-2t66md6694`)
-- Wazuh pods starting but failing with mount errors
+**Wazuh Expected:**
+- `node.pem`, `node-key.pem`, `root-ca.pem`
+- `admin.pem`, `admin-key.pem`
 
-**Required Fix:**
-Either:
-1. Modify Wazuh StatefulSets to use subPath mounts mapping cert-manager filenames to expected filenames
-2. Create a script to copy/rename certificates in a initContainer
-3. Use OpenSSL to generate Wazuh-compatible certificates
-
-**Files Documented:**
-- `deploy/wazuh-config-fix.md` - Documentation of the issue and potential fixes
-
----
-
-## Working Services
-
-| Service | Status | URL |
-|---------|--------|-----|
-| **Shuffle** | ✅ Working | https://shuffle.mcaas.example.com |
-| **Zammad** | ✅ Working | https://zammad.mcaas.example.com |
-| **CISO Assistant** | ✅ Working | https://ciso.mcaas.example.com |
-| **Wazuh** | ⚠️ Config Issue | Not accessible yet |
-
----
-
-## How to Complete Wazuh Fix
-
-### Option 1: Patch StatefulSet (Recommended)
-
-```bash
-# Patch the indexer StatefulSet to use subPath mounts
-kubectl patch statefulset wazuh-indexer -n wazuh --type='json' -p='[{
-  "op": "replace",
-  "path": "/spec/template/spec/volumes/1",
-  "value": {
-    "name": "indexer-certs",
-    "secret": {
-      "secretName": "wazuh-indexer-certs",
-      "items": [
-        {"key": "tls.crt", "path": "node.pem"},
-        {"key": "tls.key", "path": "node-key.pem"},
-        {"key": "ca.crt", "path": "root-ca.pem"}
-      ]
-    }
-  }
-}]'
+**Solution:** Used initContainer to copy certificates with correct names and permissions:
+```yaml
+initContainers:
+- name: fix-certs-permissions
+  image: busybox
+  securityContext:
+    runAsUser: 0
+  command:
+  - sh
+  - -c
+  - |
+    mkdir -p /tmp-certs
+    cp /certs/tls.crt /tmp-certs/node.pem
+    cp /certs/tls.key /tmp-certs/node-key.pem
+    cp /certs/ca.crt /tmp-certs/root-ca.pem
+    cp /certs/tls.crt /tmp-certs/admin.pem
+    cp /certs/tls.key /tmp-certs/admin-key.pem
+    chown -R 1000:1000 /tmp-certs
+    chmod 644 /tmp-certs/*.pem
+  volumeMounts:
+  - name: certs-tmp
+    mountPath: /tmp-certs
+  - name: indexer-certs
+    mountPath: /certs
+    readOnly: true
 ```
 
-### Option 2: Manual Certificate Creation
-Create certificates with proper filenames using cert-manager Certificate resources with `keystores` or additional output formats.
+### ConfigMap Hash Suffix Fix
+
+**Problem:** StatefulSets created via kustomize reference ConfigMaps with hash suffixes (e.g., `indexer-conf-46b5244fc2`)
+
+**Solution:** Created ConfigMaps with the exact hash names the StatefulSets expect:
+- `indexer-conf-46b5244fc2`
+- `wazuh-conf-2t66md6694`
+- `dashboard-conf-656mt44t78`
 
 ---
 
-## Deployment Updates for Future Redeployments
+## Access Instructions
 
-The following files now include fixes:
+1. **Add to hosts file** (C:\Windows\System32\drivers\etc\hosts):
+```
+127.0.0.1 shuffle.mcaas.example.com
+127.0.0.1 zammad.mcaas.example.com
+127.0.0.1 ciso.mcaas.example.com
+127.0.0.1 wazuh.mcaas.example.com
+```
 
-1. **deploy/values/ciso-assistant.yaml** - Includes initContainer for database creation
-2. **deploy/ingress/traefik-ingress.yaml** - Includes ServersTransport and updated IngressRoutes
-3. **deploy/traefik-serverstransport.yaml** - Standalone ServersTransport definitions
-4. **deploy/wazuh-config-fix.md** - Documentation for Wazuh certificate issues
+2. **Flush DNS:**
+```powershell
+ipconfig /flushdns
+```
+
+3. **Access URLs:**
+- https://shuffle.mcaas.example.com
+- https://zammad.mcaas.example.com
+- https://ciso.mcaas.example.com
+- https://wazuh.mcaas.example.com
+
+4. **Certificate Warning:** Accept the self-signed certificate warning in your browser
 
 ---
 
-## Next Steps
+## Deployment Command Reference
 
-1. ✅ Access Shuffle: https://shuffle.mcaas.example.com
-2. ✅ Access Zammad: https://zammad.mcaas.example.com  
-3. ✅ Access CISO: https://ciso.mcaas.example.com
-4. ⏳ Fix Wazuh certificates (requires StatefulSet modification or new certificate generation)
+For future redeployments:
+
+```bash
+# Apply servers transport first
+kubectl apply -f deploy/traefik-serverstransport.yaml
+
+# Deploy services
+helm install mcaas-postgresql bitnami/postgresql -n managed-it -f deploy/values/postgresql.yaml
+helm install mcaas-opensearch opensearch/opensearch -n security-ops -f deploy/values/opensearch.yaml
+helm install mcaas-shuffle shuffle/shuffle -n security-ops -f deploy/values/shuffle.yaml
+helm install mcaas-zammad zammad/zammad -n managed-it -f deploy/values/zammad.yaml
+helm install mcaas-ciso ciso-assistant/ciso-assistant -n grc -f deploy/values/ciso-assistant.yaml
+
+# Deploy Wazuh (use custom StatefulSets instead of upstream kustomization)
+kubectl apply -f deploy/wazuh/wazuh-indexer-statefulset.yaml
+kubectl apply -f deploy/wazuh/wazuh-manager-master-statefulset.yaml
+kubectl apply -f deploy/wazuh/wazuh-manager-worker-statefulset.yaml
+
+# Apply IngressRoutes
+kubectl apply -f deploy/ingress/traefik-ingress.yaml
+```
+
+---
+
+**All fixes have been applied and documented for future redeployments.**

@@ -108,7 +108,7 @@ nano .env
 
 ```bash
 # Deploy namespaces and secrets
-python deploy.py --skip-apps
+python scripts/deploy.py --skip-apps
 
 # Or manually:
 kubectl apply -f deploy/namespaces.yaml
@@ -137,13 +137,13 @@ kubectl get secrets -n security-ops
 
 ```bash
 # Deploy all applications
-python deploy.py
+python scripts/deploy.py
 
 # Or deploy individually:
-python deploy.py --component wazuh
-python deploy.py --component shuffle
-python deploy.py --component zammad
-python deploy.py --component ciso-assistant
+python scripts/deploy.py --component wazuh
+python scripts/deploy.py --component shuffle
+python scripts/deploy.py --component zammad
+python scripts/deploy.py --component ciso-assistant
 ```
 
 ### Step 7: Configure Integrations
@@ -360,7 +360,7 @@ kubectl exec -n security-ops mcaas-opensearch-0 -- \
 
 ```bash
 # 1. Reinstall MCaaS
-python deploy.py
+python scripts/deploy.py
 
 # 2. Restore databases
 ./restore-databases.sh /path/to/backup

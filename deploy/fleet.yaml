@@ -5,7 +5,7 @@
 #   1. Secrets must be created BEFORE applying this Fleet config:
 #      - mcaas-postgresql-secret in managed-it namespace (keys: postgres-password, password)
 #      - mcaas-opensearch-secret in security-ops namespace (key: opensearch-password)
-#      Use scripts/init-secrets.sh or scripts/init-secrets.ps1, or deploy.py does this automatically.
+#      Use scripts/init-secrets.sh or scripts/init-secrets.ps1, or scripts/deploy.py does this automatically.
 #
 #   2. OCI charts (CISO Assistant, Shuffle) require container registry credentials:
 #      kubectl create secret docker-registry ghcr-creds \
@@ -15,7 +15,7 @@
 #        -n fleet-default
 #
 #   3. Wazuh is deployed via kustomize (not Helm) and cannot be managed by Fleet.
-#      Use deploy.py or deploy.sh to deploy Wazuh separately.
+#      Use scripts/deploy.py or deploy.sh to deploy Wazuh separately.
 
 defaultNamespace: default
 

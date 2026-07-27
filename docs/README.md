@@ -179,7 +179,7 @@ kubectl port-forward -n managed-it svc/zammad-web 8080:80
 python scripts/check-prerequisites.py
 
 # Deploy full stack
-python deploy.py
+python scripts/deploy.py
 
 # Check logs
 kubectl logs -n wazuh -l app=wazuh-manager --tail=100

@@ -33,7 +33,7 @@
 - [ ] Exclude noisy rules (e.g., frequent informational alerts)
 - [ ] Create different Shuffle webhooks for different alert categories
 - [ ] Add time-based filtering (e.g., critical alerts only after hours)
-- [ ] **File:** Modify `patch-wazuh-configmap.py` with filter logic
+- [ ] **File:** Modify `scripts/patch-wazuh-configmap.py` with filter logic
 
 ---
 
@@ -48,13 +48,13 @@
 - [ ] **File:** `integrations/ciso-assistant/compliance-mapper.py`
 
 ### 5. Enhanced Wazuh ConfigMap Patching ✅ COMPLETED
-- [x] **Description:** Improve `patch-wazuh-configmap.py` robustness
+- [x] **Description:** Improve `scripts/patch-wazuh-configmap.py` robustness
 - [ ] Use label selectors instead of hardcoded ConfigMap name (`wazuh-conf-2t66md6694`)
 - [ ] Add error handling and rollback capability
 - [ ] Validate ConfigMap syntax before applying
 - [ ] Add dry-run mode
 - [ ] Create backup of previous configuration
-- [ ] **File:** Update `patch-wazuh-configmap.py`
+- [ ] **File:** Update `scripts/patch-wazuh-configmap.py`
 
 ### 6. Integration Health Monitoring ✅ COMPLETED
 - [x] **Description:** Set up monitoring for all integrations
@@ -118,8 +118,8 @@
 
 ### Files to Modify
 
-1. `patch-wazuh-configmap.py` - Improve robustness
-2. `modify_workflow.py` - Move hardcoded API token to env var
+1. `scripts/patch-wazuh-configmap.py` - Improve robustness
+2. `scripts/modify_workflow.py` - Move hardcoded API token to env var
 3. Create `integrations/` directory structure
 
 ---

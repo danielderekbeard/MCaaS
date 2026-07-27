@@ -3,7 +3,7 @@
 # =============================================================================
 # Wazuh is deployed via kustomize (not Helm), so this file is a reference only.
 #
-# When deploying Wazuh for a client, the deploy.py script will:
+# When deploying Wazuh for a client, the scripts/deploy.py script will:
 #   1. Clone the wazuh-kubernetes repo
 #   2. Apply kustomize overlays to the client's <prefix>-wazuh namespace
 #   3. Generate TLS certificates for the client

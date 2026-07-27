@@ -21,7 +21,7 @@ _This document is auto-generated and will be populated during the session._
 kubectl config current-context
 
 # Remove all MCaaS K8s resources (this triggers ALB/NLB/EBS cleanup)
-python teardown.py --client aws
+python scripts/teardown.py --client aws
 ```
 
 **Why first?** Kubernetes creates AWS resources (ALBs, NLBs, EBS volumes) on your behalf. Removing K8s resources first allows the cluster controllers to issue the corresponding AWS delete calls. If you destroy the cluster before this step, those delete calls never happen — leaving orphaned resources.
@@ -30,10 +30,10 @@ python teardown.py --client aws
 
 ```bash
 # Only after Step 1 is complete
-python deploy-aws.py --tear-down
+python scripts/deploy-aws.py --tear-down
 
 # Or for a specific cluster
-python deploy-aws.py --tear-down --cluster-name my-cluster --region us-west-2
+python scripts/deploy-aws.py --tear-down --cluster-name my-cluster --region us-west-2
 ```
 
 #### Step 3 — Verify and Clean Up Orphaned Resources

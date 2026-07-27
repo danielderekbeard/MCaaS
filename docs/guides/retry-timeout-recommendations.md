@@ -5,7 +5,7 @@
 
 ---
 
-## Current Timeouts in `deploy.py`
+## Current Timeouts in `scripts/deploy.py`
 
 | Component | Resource Type | Current Timeout | Wait Strategy |
 |-----------|-------------|-----------------|---------------|
@@ -35,7 +35,7 @@
 
 ### `helm upgrade --install`
 - Helm's built-in retry: If a release is in "failed" state, `upgrade --install` will attempt to upgrade it
-- No retry on Helm command failure itself — deploy.py moves to the next component
+- No retry on Helm command failure itself — scripts/deploy.py moves to the next component
 
 ---
 

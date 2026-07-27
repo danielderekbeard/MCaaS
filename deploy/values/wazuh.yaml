@@ -12,7 +12,7 @@
 #
 # Currently the deployment uses the upstream local-env overlay as-is, which
 # deploys the Wazuh indexer alongside the manager and dashboard in the "wazuh"
-# namespace. See deploy_wazuh() in deploy.py for details.
+# namespace. See deploy_wazuh() in scripts/deploy.py for details.
 
 wazuh:
   manager:

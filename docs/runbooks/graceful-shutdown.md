@@ -9,7 +9,7 @@ Instead of destroying the cluster or deleting deployments, this process scales y
 ## Prerequisites
 
 Ensure the following before running the power management commands:
-* The `power_manager.py` script is saved in the same directory as `deploy.py`.
+* The `scripts/power_manager.py` script is saved in the same directory as `scripts/deploy.py`.
 * You have an active connection to your Kubernetes cluster (`kubectl` must be authenticated).
 
 ---
@@ -20,4 +20,4 @@ Ensure the following before running the power management commands:
 To suspend the stack and stop all active containers, run:
 
 ```bash
-python power_manager.py shutdown
+python scripts/power_manager.py shutdown

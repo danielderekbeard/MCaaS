@@ -58,7 +58,7 @@ The AWS user/role needs at minimum:
 ### 1. Deploy Everything (Infrastructure + Applications)
 
 ```bash
-python deploy-aws.py
+python scripts/deploy-aws.py
 ```
 
 This will:
@@ -71,7 +71,7 @@ This will:
 ### 2. Deploy with Custom Client Config
 
 ```bash
-python deploy-aws.py --client aws
+python scripts/deploy-aws.py --client aws
 ```
 
 ### 3. Deploy with Cloudflare DNS01 (Wildcard Certificates)
@@ -79,7 +79,7 @@ python deploy-aws.py --client aws
 Enable Cloudflare DNS01 challenges for wildcard TLS certificates:
 
 ```bash
-python deploy-aws.py --cloudflare-token <YOUR_CLOUDFLARE_API_TOKEN>
+python scripts/deploy-aws.py --cloudflare-token <YOUR_CLOUDFLARE_API_TOKEN>
 ```
 
 This automatically creates the `cloudflare-api-token-secret` in the `cert-manager` namespace
@@ -90,7 +90,7 @@ and applies the `letsencrypt-cloudflare` ClusterIssuer. See [Cloudflare DNS01 Se
 If you already have an EKS cluster:
 
 ```bash
-python deploy-aws.py --skip-cluster
+python scripts/deploy-aws.py --skip-cluster
 ```
 
 ### 5. Skip Infrastructure Setup (Use Existing Add-ons)
@@ -98,7 +98,7 @@ python deploy-aws.py --skip-cluster
 If add-ons are already installed but you want to deploy applications:
 
 ```bash
-python deploy-aws.py --skip-infrastructure
+python scripts/deploy-aws.py --skip-infrastructure
 ```
 
 ### 6. Dry Run
@@ -106,7 +106,7 @@ python deploy-aws.py --skip-infrastructure
 Preview all changes without executing:
 
 ```bash
-python deploy-aws.py --dry-run
+python scripts/deploy-aws.py --dry-run
 ```
 
 ## Configuration
@@ -197,7 +197,7 @@ which HTTP01 cannot issue. This is the recommended approach for Cloudflare-manag
 **Step 2 — Deploy with `--cloudflare-token`**
 
 ```bash
-python deploy-aws.py --cloudflare-token <YOUR_CLOUDFLARE_API_TOKEN>
+python scripts/deploy-aws.py --cloudflare-token <YOUR_CLOUDFLARE_API_TOKEN>
 ```
 
 This automatically:
@@ -267,7 +267,7 @@ After deployment, retrieve access information:
 kubectl get ingress -A
 
 # Get admin credentials
-python deploy-aws.py --dry-run  # Review generated summary
+python scripts/deploy-aws.py --dry-run  # Review generated summary
 
 # Or check the generated summary file
 cat mcaas-aws-environment-summary.md
@@ -347,19 +347,19 @@ This removes all MCaaS Helm releases, K8s resources, PVCs, secrets, and namespac
 
 ```bash
 # Default (mcaas) deployment
-python teardown.py
+python scripts/teardown.py
 
 # Client-specific deployment
-python teardown.py --client aws
+python scripts/teardown.py --client aws
 
 # Skip PVC deletion if you want to preserve data
-python teardown.py --client aws --skip-pvcs
+python scripts/teardown.py --client aws --skip-pvcs
 
 # Skip namespace deletion (useful for shared clusters)
-python teardown.py --client aws --skip-namespaces
+python scripts/teardown.py --client aws --skip-namespaces
 ```
 
-> **Note:** `teardown.py` is **not** AWS-specific — it works against any Kubernetes cluster your `kubectl` context points to. Make sure your kubeconfig is pointing to the correct EKS cluster before running it.
+> **Note:** `scripts/teardown.py` is **not** AWS-specific — it works against any Kubernetes cluster your `kubectl` context points to. Make sure your kubeconfig is pointing to the correct EKS cluster before running it.
 
 **Verify all resources are removed:**
 
@@ -384,10 +384,10 @@ Only after confirming Step 1 is complete:
 
 ```bash
 # Delete default cluster (mcaas-eks in eu-west-1)
-python deploy-aws.py --tear-down
+python scripts/deploy-aws.py --tear-down
 
 # Delete a specific cluster
-python deploy-aws.py --tear-down --cluster-name my-cluster --region us-west-2
+python scripts/deploy-aws.py --tear-down --cluster-name my-cluster --region us-west-2
 ```
 
 This runs `eksctl delete cluster`, which removes:
@@ -399,7 +399,7 @@ This runs `eksctl delete cluster`, which removes:
 
 ### Post-Teardown AWS Cleanup
 
-`eksctl delete cluster` and `teardown.py` do **not** clean up everything. After both steps, **manually verify and remove** the following orphaned resources:
+`eksctl delete cluster` and `scripts/teardown.py` do **not** clean up everything. After both steps, **manually verify and remove** the following orphaned resources:
 
 | Resource | How to Check | How to Remove |
 |----------|-------------|---------------|
@@ -437,10 +437,10 @@ For k3s, Rancher Desktop, or other local clusters, only Step 1 is needed:
 
 ```bash
 # Default deployment
-python teardown.py
+python scripts/teardown.py
 
 # Client-specific deployment
-python teardown.py --client demo
+python scripts/teardown.py --client demo
 ```
 
 No Step 2 is needed because there's no cloud infrastructure to destroy.

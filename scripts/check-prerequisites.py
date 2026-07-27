@@ -12,9 +12,9 @@ import sys
 import platform
 from pathlib import Path
 
-
 PLATFORM = platform.system()
 IS_WINDOWS = PLATFORM == "Windows"
+
 
 def run_cmd(cmd, check=False):
     """Run a command and return output."""
@@ -29,9 +29,9 @@ def check_tool(tool_name, cmd=None, windows_install=None, unix_install=None):
     """Check if a tool is installed and provide guidance if not."""
     if cmd is None:
         cmd = [tool_name, "--version"]
-    
+
     output, code = run_cmd(cmd, check=False)
-    
+
     if code == 0 and output:
         print(f"✅ {tool_name}: OK")
         print(f"   Version: {output.split(chr(10))[0]}")
@@ -49,14 +49,16 @@ def check_kubectl():
     """Check kubectl installation and cluster connectivity."""
     if not check_tool("kubectl", ["kubectl", "version", "--client"]):
         return False
-    
+
     # Check cluster connectivity
     ctx_output, code = run_cmd(["kubectl", "config", "current-context"], check=False)
     if code == 0:
         print(f"   Current context: {ctx_output}")
         return True
     else:
-        print("   ⚠️  No kubectl context configured. Configure your kubeconfig before deploying.")
+        print(
+            "   ⚠️  No kubectl context configured. Configure your kubeconfig before deploying."
+        )
         return True  # Still ok, they can fix this later
 
 
@@ -66,7 +68,7 @@ def check_helm():
         "helm",
         ["helm", "version"],
         windows_install="choco install helm OR download from https://github.com/helm/helm/releases",
-        unix_install="brew install helm (macOS) OR download from https://github.com/helm/helm/releases"
+        unix_install="brew install helm (macOS) OR download from https://github.com/helm/helm/releases",
     )
 
 
@@ -76,7 +78,7 @@ def check_git():
         "git",
         ["git", "--version"],
         windows_install="choco install git OR download from https://git-scm.com/download/win",
-        unix_install="brew install git (macOS) OR apt-get install git (Linux)"
+        unix_install="brew install git (macOS) OR apt-get install git (Linux)",
     )
 
 
@@ -122,6 +124,7 @@ def ensure_openssl_on_path() -> None:
     if openssl_path:
         openssl_dir = str(Path(openssl_path).parent)
         import os
+
         os.environ["PATH"] = openssl_dir + os.pathsep + os.environ.get("PATH", "")
         print(f"   Added OpenSSL directory to PATH: {openssl_dir}")
     else:
@@ -141,16 +144,16 @@ def check_openssl():
         "openssl",
         ["openssl", "version"],
         windows_install="choco install openssl OR install Git for Windows (includes OpenSSL)",
-        unix_install="brew install openssl (macOS) OR apt-get install openssl (Linux)"
+        unix_install="brew install openssl (macOS) OR apt-get install openssl (Linux)",
     )
 
 
 def check_docker_runtime():
     """Check for a Docker or Kubernetes runtime."""
     docker_available = shutil.which("docker") is not None
-    
+
     runtimes = []
-    
+
     # Check common Kubernetes distributions
     if shutil.which("kubectl") is not None:
         output, code = run_cmd(["kubectl", "config", "current-context"], check=False)
@@ -164,12 +167,14 @@ def check_docker_runtime():
                 runtimes.append("Minikube (detected)")
             else:
                 runtimes.append(f"Kubernetes cluster: {ctx}")
-    
+
     if docker_available:
-        output, code = run_cmd(["docker", "version", "--format={{.Server.Version}}"], check=False)
+        output, code = run_cmd(
+            ["docker", "version", "--format={{.Server.Version}}"], check=False
+        )
         if code == 0:
             runtimes.append(f"Docker: {output}")
-    
+
     if runtimes:
         print(f"✅ Kubernetes Runtime: OK")
         for runtime in runtimes:
@@ -177,8 +182,12 @@ def check_docker_runtime():
         return True
     else:
         print(f"❌ Kubernetes Runtime: NOT FOUND")
-        print("   Required: Docker Desktop, Rancher Desktop, Minikube, or remote Kubernetes cluster")
-        print("   Windows: Download Docker Desktop from https://www.docker.com/products/docker-desktop")
+        print(
+            "   Required: Docker Desktop, Rancher Desktop, Minikube, or remote Kubernetes cluster"
+        )
+        print(
+            "   Windows: Download Docker Desktop from https://www.docker.com/products/docker-desktop"
+        )
         print("   OR Rancher Desktop from https://rancherdesktop.io/")
         return False
 
@@ -187,17 +196,19 @@ def check_powershell():
     """Check PowerShell version (Windows only)."""
     if not IS_WINDOWS:
         return True
-    
-    output, code = run_cmd(["powershell", "-Command", "$PSVersionTable.PSVersion"], check=False)
+
+    output, code = run_cmd(
+        ["powershell", "-Command", "$PSVersionTable.PSVersion"], check=False
+    )
     if code == 0 and output:
         # Extract version
-        lines = output.strip().split('\n')
+        lines = output.strip().split("\n")
         if lines:
             print(f"✅ PowerShell: OK")
             for line in lines[:3]:
                 print(f"   {line}")
             return True
-    
+
     print(f"❌ PowerShell: NOT FOUND or incompatible")
     print("   Windows: PowerShell 5.0 or higher is required")
     return False
@@ -210,7 +221,7 @@ def main():
     print(f"Platform: {PLATFORM}")
     print("=" * 60)
     print()
-    
+
     checks = [
         ("kubectl", check_kubectl),
         ("helm", check_helm),
@@ -218,31 +229,31 @@ def main():
         ("openssl", check_openssl),
         ("Kubernetes Runtime", check_docker_runtime),
     ]
-    
+
     if IS_WINDOWS:
         checks.append(("PowerShell", check_powershell))
-    
+
     results = {}
     for name, check_func in checks:
         print(f"\nChecking {name}...")
         results[name] = check_func()
-    
+
     print("\n" + "=" * 60)
-    
+
     all_ok = all(results.values())
-    
+
     if all_ok:
         print("✅ All prerequisites are met!")
         print("\nNext steps:")
         print("1. Configure your kubeconfig if you haven't already")
-        print("2. Run: python deploy.py")
-        print("   (or on Windows: python deploy.py)")
+        print("2. Run: python scripts/deploy.py")
+        print("   (or on Windows: python scripts/deploy.py)")
         return 0
     else:
         print("❌ Some prerequisites are missing.")
         print("\nPlease install the missing tools and try again.")
         print("\nFor deployment on Windows, you have two options:")
-        print("1. Install the missing tools above and run: python deploy.py")
+        print("1. Install the missing tools above and run: python scripts/deploy.py")
         print("2. Use Windows Subsystem for Linux (WSL):")
         print("   - Install WSL2: wsl --install")
         print("   - Install tools in WSL: apt-get install kubectl helm git")

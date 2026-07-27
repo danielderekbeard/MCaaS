@@ -1,7 +1,7 @@
 # MCaaS Installation Guide
 
 > **Status: DRAFT — Not for commit**  
-> Generated from session analysis of deploy.py and deployment stack configuration.
+> Generated from session analysis of scripts/deploy.py and deployment stack configuration.
 
 ---
 
@@ -27,7 +27,7 @@
 | **Python** | 3.8+ | `python --version` |
 | **k3s/k3d/Rancher Desktop** | Any | `kubectl cluster-info` |
 
-> **Windows users**: Git Bash or WSL2 is recommended. `deploy.py` handles Windows
+> **Windows users**: Git Bash or WSL2 is recommended. `scripts/deploy.py` handles Windows
 > edge cases (symlinks, path separators, OpenSSL discovery), but ensure
 > `git` is on your PATH.
 
@@ -48,14 +48,14 @@ export MCAAS_POSTGRES_PASSWORD="your-secure-password"
 export MCAAS_OPENSEARCH_PASSWORD="your-secure-password"
 
 # 2. Run the deployer
-python deploy.py
+python scripts/deploy.py
 
 # 3. Wait approximately 45–60 minutes for all components to come online.
 
 # 4. Access services (see Services Matrix for URLs and credentials)
 ```
 
-> If you omit the passwords, `deploy.py` will generate random 24-character
+> If you omit the passwords, `scripts/deploy.py` will generate random 24-character
 > passwords and save them to a `.env` file in the project root. **Back this
 > file up** — it is required for redeployments.
 
@@ -64,7 +64,7 @@ python deploy.py
 ## Deployment Sequence & Expected Wait Times
 
 The table below shows the order in which components are deployed, the timeout
-configured in `deploy.py`, and the **expected real-world wait time** on a
+configured in `scripts/deploy.py`, and the **expected real-world wait time** on a
 single-node k3s cluster (8 GB RAM, 4 vCPU, SSD storage).
 
 | # | Component | Helm Timeout | Additional Waits | Expected Wall-Clock Time | Cumulative |
@@ -111,10 +111,10 @@ export MCAAS_POSTGRES_PASSWORD="..."
 export MCAAS_OPENSEARCH_PASSWORD="..."
 ```
 
-### Step 1: Run deploy.py
+### Step 1: Run scripts/deploy.py
 
 ```bash
-python deploy.py
+python scripts/deploy.py
 ```
 
 **What happens automatically:**
@@ -231,16 +231,16 @@ kubectl get storageclass
 kubectl get pvc -A
 ```
 
-Wazuh uses `wazuh-storage` (mapped to `rancher.io/local-path` by deploy.py).
+Wazuh uses `wazuh-storage` (mapped to `rancher.io/local-path` by scripts/deploy.py).
 Other components use the default `local-path` StorageClass.
 
 ### Wazuh Certificates Missing
 
-On Windows, `deploy.py` automatically generates self-signed certificates
+On Windows, `scripts/deploy.py` automatically generates self-signed certificates
 using `ensure_wazuh_certs()`. If this fails:
 
 1. Verify OpenSSL is discoverable: `python -c "import shutil; print(shutil.which('openssl'))"`
-2. Check `deploy.py` logs for the OpenSSL discovery path
+2. Check `scripts/deploy.py` logs for the OpenSSL discovery path
 
 ### Shuffle Frontend CrashLoopBackOff
 
@@ -257,22 +257,22 @@ To remove all MCaaS resources from your local/single-node cluster:
 
 ```bash
 # Default (mcaas) deployment
-python teardown.py
+python scripts/teardown.py
 
 # Client-specific deployment
-python teardown.py --client <client-name>
+python scripts/teardown.py --client <client-name>
 
 # Skip PVC deletion if you want to preserve data volumes
-python teardown.py --skip-pvcs
+python scripts/teardown.py --skip-pvcs
 
 # Skip namespace deletion (useful for shared clusters)
-python teardown.py --skip-namespaces
+python scripts/teardown.py --skip-namespaces
 
 # Skip .tmp/ cleanup (keeps cloned chart repos for inspection)
-python teardown.py --skip-cleanup
+python scripts/teardown.py --skip-cleanup
 ```
 
-### What teardown.py Does
+### What scripts/teardown.py Does
 
 | Step | Action | Resources Removed |
 |------|--------|-------------------|
@@ -284,18 +284,18 @@ python teardown.py --skip-cleanup
 | 6 | Delete namespaces | `managed-it`, `security-ops`, `grc`, `wazuh` (or client-prefixed) |
 | 7 | Clean up `.tmp/` | Remove cloned chart repos |
 
-> **Note:** `teardown.py` injects `--insecure-skip-tls-verify` automatically for self-signed clusters (k3s, Rancher Desktop).
+> **Note:** `scripts/teardown.py` injects `--insecure-skip-tls-verify` automatically for self-signed clusters (k3s, Rancher Desktop).
 
 ### ⚠️ For AWS/EKS Deployments — Two Steps Required
 
-If you are running on AWS EKS, `teardown.py` only removes Kubernetes resources (Step 1). You must **also** destroy the EKS cluster separately:
+If you are running on AWS EKS, `scripts/teardown.py` only removes Kubernetes resources (Step 1). You must **also** destroy the EKS cluster separately:
 
 ```bash
 # Step 1: Remove K8s resources (triggers ALB/NLB/EBS cleanup)
-python teardown.py --client aws
+python scripts/teardown.py --client aws
 
 # Step 2: Destroy the EKS cluster
-python deploy-aws.py --tear-down
+python scripts/deploy-aws.py --tear-down
 ```
 
 > **CRITICAL:** Always run Step 1 **before** Step 2. If you delete the EKS cluster first, Kubernetes cannot issue the delete calls that trigger cleanup of AWS load balancers and EBS volumes — leaving orphaned resources that continue to incur costs.

@@ -34,7 +34,7 @@ The MCaaS stack deploys six services into four namespaces:
 | Zammad | `managed-it` | `mcaas-zammad` | OCI Helm |
 | CISO Assistant | `grc` | `mcaas-ciso` | OCI Helm |
 
-In the default (single-client) setup, all names are hardcoded in `deploy.py`, `deploy/values/*.yaml`, and `deploy/namespaces.yaml`. For multi-client deployments, each client gets its own prefix that isolates resources:
+In the default (single-client) setup, all names are hardcoded in `scripts/deploy.py`, `deploy/values/*.yaml`, and `deploy/namespaces.yaml`. For multi-client deployments, each client gets its own prefix that isolates resources:
 
 | Resource | Single-Client (default) | Multi-Client (e.g., `acme`) |
 |----------|------------------------|------------------------------|
@@ -129,8 +129,9 @@ MCaaS/
 │       ├── namespaces.yaml
 │       └── values/
 │           └── ...
-├── deploy.py
-├── teardown.py
+├── scripts/
+│   ├── deploy.py
+│   └── teardown.py
 ├── .env.example
 └── .github/
     └── workflows/
@@ -178,7 +179,7 @@ client:
 
 ## 4. How Client Overlays Work
 
-When you run `deploy.py --client acme`, the script:
+When you run `scripts/deploy.py --client acme`, the script:
 
 1. **Reads** `clients/acme/config.yaml` to get the client prefix, namespaces, and domains
 2. **Generates namespaces** from `clients/acme/namespaces.yaml` instead of the base `deploy/namespaces.yaml`
@@ -189,7 +190,7 @@ When you run `deploy.py --client acme`, the script:
 5. **Installs Helm releases** with client-prefixed release names and client-specific namespaces
 6. **Configures ingress** with client-specific domain names
 
-If `--client` is **not** specified, `deploy.py` behaves exactly as before — using `mcaas-` prefix and base values — ensuring full backward compatibility.
+If `--client` is **not** specified, `scripts/deploy.py` behaves exactly as before — using `mcaas-` prefix and base values — ensuring full backward compatibility.
 
 ---
 
@@ -307,7 +308,7 @@ When deploying locally:
 ```bash
 cp .env.acme .env
 # Fill in values
-python deploy.py --client acme
+python scripts/deploy.py --client acme
 ```
 
 ### Option C: External Secret Management (Production)
@@ -336,18 +337,18 @@ Before deploying for a client, ensure:
 
 ```bash
 # Deploy the ACME client stack
-python deploy.py --client acme
+python scripts/deploy.py --client acme
 
 # Dry run first (recommended)
-python deploy.py --client acme --dry-run
+python scripts/deploy.py --client acme --dry-run
 
 # Deploy with verbose logging
-python deploy.py --client acme 2>&1 | tee logs/acme-deploy.log
+python scripts/deploy.py --client acme 2>&1 | tee logs/acme-deploy.log
 ```
 
 ### What `--client` Changes
 
-When `--client acme` is specified, `deploy.py` internally:
+When `--client acme` is specified, `scripts/deploy.py` internally:
 
 1. Loads `clients/acme/config.yaml` to get the prefix, namespaces, and domain settings
 2. Replaces all `mcaas-` prefixed resource names with `acme-` prefix
@@ -365,10 +366,10 @@ Each client's resources are fully isolated by namespace and release name prefix.
 
 ```bash
 # Deploy ACME stack
-python deploy.py --client acme
+python scripts/deploy.py --client acme
 
 # Deploy Globex stack (on the same cluster)
-python deploy.py --client globex
+python scripts/deploy.py --client globex
 
 # Both stacks coexist — different namespaces and release names
 kubectl get namespaces | grep -E 'acme|globex'
@@ -401,16 +402,16 @@ For clients on different clusters, use kubeconfig contexts:
 kubectl config use-context acme-production
 
 # Deploy ACME
-python deploy.py --client acme
+python scripts/deploy.py --client acme
 
 # Switch to Globex's cluster context
 kubectl config use-context globex-production
 
 # Deploy Globex
-python deploy.py --client globex
+python scripts/deploy.py --client globex
 ```
 
-Or set the `kube_context` field in the client config and let `deploy.py` switch automatically.
+Or set the `kube_context` field in the client config and let `scripts/deploy.py` switch automatically.
 
 ---
 
@@ -467,7 +468,7 @@ jobs:
           if [ -n "${{ inputs.client }}" ]; then
             ARGS="--client ${{ inputs.client }}"
           fi
-          python deploy.py $ARGS
+          python scripts/deploy.py $ARGS
 
       - name: Health Check
         if: ${{ inputs.skip_health_check != true }}
@@ -509,7 +510,7 @@ jobs:
           if [ -n "${{ inputs.client }}" ]; then
             ARGS="--client ${{ inputs.client }}"
           fi
-          python deploy.py $ARGS
+          python scripts/deploy.py $ARGS
 ```
 
 Each environment has its own set of `MCAAS_*` secrets, so the same secret names work across all clients.
@@ -739,7 +740,7 @@ Or, if using environments:
 ### 7. Verify the Configuration (Dry Run)
 
 ```bash
-python deploy.py --client acme --dry-run
+python scripts/deploy.py --client acme --dry-run
 ```
 
 Review the dry-run output to confirm:
@@ -752,7 +753,7 @@ Review the dry-run output to confirm:
 ### 8. Deploy
 
 ```bash
-python deploy.py --client acme
+python scripts/deploy.py --client acme
 ```
 
 ### 9. Verify Deployment
@@ -793,14 +794,14 @@ Create a PR from `client/acme` → `main` to review the client configuration bef
 
 ## 10. Teardown for a Client
 
-Use `teardown.py` with the same `--client` parameter to remove all resources for a specific client:
+Use `scripts/teardown.py` with the same `--client` parameter to remove all resources for a specific client:
 
 ```bash
 # Remove ACME's entire stack
-python teardown.py --client acme
+python scripts/teardown.py --client acme
 
 # Dry run first
-python teardown.py --client acme --dry-run
+python scripts/teardown.py --client acme --dry-run
 ```
 
 This will:
@@ -833,37 +834,37 @@ This table shows every hardcoded string in the codebase that must change for mul
 | Category | Base Value | Client Pattern | Files Affected |
 |----------|-----------|----------------|----------------|
 | **Helm Releases** | | | |
-| PostgreSQL release | `mcaas-postgresql` | `{prefix}-postgresql` | `deploy.py` |
-| OpenSearch release | `mcaas-opensearch` | `{prefix}-opensearch` | `deploy.py` |
-| Shuffle release | `mcaas-shuffle` | `{prefix}-shuffle` | `deploy.py` |
-| Zammad release | `mcaas-zammad` | `{prefix}-zammad` | `deploy.py` |
-| CISO release | `mcaas-ciso` | `{prefix}-ciso` | `deploy.py` |
+| PostgreSQL release | `mcaas-postgresql` | `{prefix}-postgresql` | `scripts/deploy.py` |
+| OpenSearch release | `mcaas-opensearch` | `{prefix}-opensearch` | `scripts/deploy.py` |
+| Shuffle release | `mcaas-shuffle` | `{prefix}-shuffle` | `scripts/deploy.py` |
+| Zammad release | `mcaas-zammad` | `{prefix}-zammad` | `scripts/deploy.py` |
+| CISO release | `mcaas-ciso` | `{prefix}-ciso` | `scripts/deploy.py` |
 | **Namespaces** | | | |
-| managed-it | `managed-it` | `{prefix}-managed-it` | `deploy.py`, `namespaces.yaml`, all values |
-| security-ops | `security-ops` | `{prefix}-security-ops` | `deploy.py`, `namespaces.yaml`, all values |
-| grc | `grc` | `{prefix}-grc` | `deploy.py`, `namespaces.yaml`, all values |
-| wazuh | `wazuh` | `{prefix}-wazuh` | `deploy.py`, `namespaces.yaml` |
+| managed-it | `managed-it` | `{prefix}-managed-it` | `scripts/deploy.py`, `namespaces.yaml`, all values |
+| security-ops | `security-ops` | `{prefix}-security-ops` | `scripts/deploy.py`, `namespaces.yaml`, all values |
+| grc | `grc` | `{prefix}-grc` | `scripts/deploy.py`, `namespaces.yaml`, all values |
+| wazuh | `wazuh` | `{prefix}-wazuh` | `scripts/deploy.py`, `namespaces.yaml` |
 | **Secrets** | | | |
-| PostgreSQL | `mcaas-postgresql-secret` | `{prefix}-postgresql-secret` | `deploy.py`, `postgresql.yaml`, `zammad.yaml`, `ciso-assistant.yaml` |
-| OpenSearch | `mcaas-opensearch-secret` | `{prefix}-opensearch-secret` | `deploy.py`, `opensearch.yaml`, `shuffle.yaml`, `wazuh.yaml` |
-| Redis | `mcaas-zammad-redis-pass` | `{prefix}-zammad-redis-pass` | `deploy.py`, `zammad.yaml` |
-| CISO Django | `mcaas-ciso-secret` | `{prefix}-ciso-secret` | `deploy.py`, `ciso-assistant.yaml` |
+| PostgreSQL | `mcaas-postgresql-secret` | `{prefix}-postgresql-secret` | `scripts/deploy.py`, `postgresql.yaml`, `zammad.yaml`, `ciso-assistant.yaml` |
+| OpenSearch | `mcaas-opensearch-secret` | `{prefix}-opensearch-secret` | `scripts/deploy.py`, `opensearch.yaml`, `shuffle.yaml`, `wazuh.yaml` |
+| Redis | `mcaas-zammad-redis-pass` | `{prefix}-zammad-redis-pass` | `scripts/deploy.py`, `zammad.yaml` |
+| CISO Django | `mcaas-ciso-secret` | `{prefix}-ciso-secret` | `scripts/deploy.py`, `ciso-assistant.yaml` |
 | **Service FQDNs** | | | |
 | PostgreSQL host | `mcaas-postgresql.managed-it.svc.cluster.local` | `{prefix}-postgresql.{prefix}-managed-it.svc.cluster.local` | `zammad.yaml`, `ciso-assistant.yaml` |
 | OpenSearch host | `opensearch-cluster-master.security-ops.svc.cluster.local` | `opensearch-cluster-master.{prefix}-security-ops.svc.cluster.local` | `shuffle.yaml`, `wazuh.yaml` |
 | Redis host | `mcaas-zammad-redis` | `{prefix}-zammad-redis` | `zammad.yaml` |
 | **Database** | | | |
-| Main DB | `mcaas_db` | `{prefix}_db` | `deploy.py`, `postgresql.yaml` |
+| Main DB | `mcaas_db` | `{prefix}_db` | `scripts/deploy.py`, `postgresql.yaml` |
 | Zammad DB | `zammad` | `zammad` (unchanged) | `zammad.yaml` |
 | CISO DB | `ciso-assistant` | `ciso-assistant` (unchanged) | `ciso-assistant.yaml` |
 | **Ingress** | | | |
 | Zammad host | `zammad.mcaas.example.com` | `zammad.{domain}` | `zammad.yaml` |
 | CISO host | `ciso.mcaas.example.com` | `ciso.{domain}` | `ciso-assistant.yaml` |
 | **Environment Variables** | | | |
-| `MCAAS_POSTGRES_PASSWORD` | base | `{PREFIX}_POSTGRES_PASSWORD` | `.env`, `deploy.py`, workflows |
-| `MCAAS_OPENSEARCH_PASSWORD` | base | `{PREFIX}_OPENSEARCH_PASSWORD` | `.env`, `deploy.py`, workflows |
-| `MCAAS_REDIS_PASSWORD` | base | `{PREFIX}_REDIS_PASSWORD` | `.env`, `deploy.py`, workflows |
-| `MCAAS_DJANGO_SECRET_KEY` | base | `{PREFIX}_DJANGO_SECRET_KEY` | `.env`, `deploy.py`, workflows |
+| `MCAAS_POSTGRES_PASSWORD` | base | `{PREFIX}_POSTGRES_PASSWORD` | `.env`, `scripts/deploy.py`, workflows |
+| `MCAAS_OPENSEARCH_PASSWORD` | base | `{PREFIX}_OPENSEARCH_PASSWORD` | `.env`, `scripts/deploy.py`, workflows |
+| `MCAAS_REDIS_PASSWORD` | base | `{PREFIX}_REDIS_PASSWORD` | `.env`, `scripts/deploy.py`, workflows |
+| `MCAAS_DJANGO_SECRET_KEY` | base | `{PREFIX}_DJANGO_SECRET_KEY` | `.env`, `scripts/deploy.py`, workflows |
 
 ---
 
@@ -922,15 +923,15 @@ Each client's resources are isolated by namespace and release name. If you see c
 Wazuh uses kustomize (not Helm) and has its own namespace configuration. When deploying for a client:
 
 1. The Wazuh namespace in `clients/<client>/namespaces.yaml` must be `{prefix}-wazuh`
-2. `deploy.py` must pass the client-prefixed namespace to `kubectl apply -k` for the Wazuh overlay
+2. `scripts/deploy.py` must pass the client-prefixed namespace to `kubectl apply -k` for the Wazuh overlay
 3. Wazuh's internal references to OpenSearch must use the client-prefixed namespace
 
 ### Deploy script doesn't recognize `--client`
 
-Make sure you're running the updated version of `deploy.py` that includes the `--client` argument:
+Make sure you're running the updated version of `scripts/deploy.py` that includes the `--client` argument:
 
 ```bash
-python deploy.py --help
+python scripts/deploy.py --help
 # Should show: --client CLIENT  Client name for multi-client deployment
 ```
 
@@ -949,11 +950,11 @@ If not, pull the latest changes from the `client/<name>` branch.
 │    1. git checkout -b client/<name>                           │
 │    2. cp -r clients/_template clients/<name>                  │
 │    3. Edit config.yaml, namespaces.yaml, values/*.yaml        │
-│    4. python deploy.py --client <name> --dry-run              │
-│    5. python deploy.py --client <name>                        │
+│    4. python scripts/deploy.py --client <name> --dry-run              │
+│    5. python scripts/deploy.py --client <name>                        │
 │                                                               │
-│  Deploy:    python deploy.py --client <name>                  │
-│  Teardown:  python teardown.py --client <name>                │
+│  Deploy:    python scripts/deploy.py --client <name>                  │
+│  Teardown:  python scripts/teardown.py --client <name>                │
 │  Dry run:   Add --dry-run to either command                   │
 │                                                               │
 │  Branch:    client/<name> (e.g., client/acme)                │

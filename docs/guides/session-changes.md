@@ -5,7 +5,7 @@
 
 ---
 
-## Changes Made to `deploy.py`
+## Changes Made to `scripts/deploy.py`
 
 ### 1. OpenSearch Helm Timeout Increase
 - **What**: Increased OpenSearch deployment timeout from 5 minutes to 10 minutes
@@ -72,7 +72,7 @@
 ### OpenSearch Helm Release "Failed" State
 - **Symptom**: Pod is Running 1/1 and Healthy, but `helm list` shows the release in "failed" status
 - **Root Cause**: The original Helm install timed out before OpenSearch completed startup. Helm marks the release as failed even though the pod eventually became Ready.
-- **Fix**: Run `helm upgrade --install mcaas-opensearch opensearch/opensearch --namespace security-ops --values deploy/values/opensearch.yaml` to re-sync Helm state. This is what `deploy.py` already does on re-run.
+- **Fix**: Run `helm upgrade --install mcaas-opensearch opensearch/opensearch --namespace security-ops --values deploy/values/opensearch.yaml` to re-sync Helm state. This is what `scripts/deploy.py` already does on re-run.
 - **Status**: Known issue. Will self-heal on next deployment run.
 
 ### Wazuh Values Not Applied (kustomize Limitation)
@@ -204,7 +204,7 @@
 
 1. **Timeouts are the #1 deployment issue**: On k3s/Rancher Desktop, image pulls and init containers take significantly longer than default 5-minute timeouts. All timeouts have been increased, but further increases may be needed on slower connections.
 
-2. **Helm release state can diverge from pod state**: A Helm timeout doesn't mean the deployment failed — it means Helm gave up waiting. The pod may still be progressing toward Ready. Running `deploy.py` again (which uses `helm upgrade --install`) is the correct recovery action.
+2. **Helm release state can diverge from pod state**: A Helm timeout doesn't mean the deployment failed — it means Helm gave up waiting. The pod may still be progressing toward Ready. Running `scripts/deploy.py` again (which uses `helm upgrade --install`) is the correct recovery action.
 
 3. **kustomize and Helm don't mix for Wazuh**: The current architecture uses Helm for 5 components and kustomize for Wazuh. This creates a configuration gap where `wazuh.yaml` values are not applied. A kustomize overlay strategy is needed.
 

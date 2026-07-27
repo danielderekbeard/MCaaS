@@ -271,7 +271,7 @@ if not set).
 
 6. Database Provisioning
 
-The deploy.py script creates databases idempotently before deploying services that need them:
+The scripts/deploy.py script creates databases idempotently before deploying services that need them:
 
 - `mcaas_db` — default PostgreSQL database (created by the Bitnami chart)
 - `zammad` — created before the Zammad Helm release
