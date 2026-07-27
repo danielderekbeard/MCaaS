@@ -191,9 +191,9 @@ kubectl port-forward -n security-ops svc/shuffle-backend 3008:3008 &
 kubectl port-forward -n managed-it svc/zammad-web 8080:80 &
 # Open http://localhost:8080 in browser
 
-# Verify CISO Assistant (via port-forward if no ingress)
-kubectl port-forward -n grc svc/ciso-assistant-frontend 8443:443 &
-# Open https://localhost:8443 in browser
+# Verify CISO Assistant (via ingress — https://strategos.mcaas.example.com)
+# Or via port-forward for debugging:
+# kubectl port-forward -n grc svc/mcaas-ciso-ciso-assistant-frontend 8443:80
 ```
 
 ---

@@ -110,9 +110,9 @@
 | Database user | `postgres` | Change `externalPgsql.user` | |
 | Database password | From `mcaas-postgresql-secret` | Change `externalPgsql.existingSecret` | CISO Assistant reads both `postgres-password` and `password` keys from this secret |
 | Database name | `ciso-assistant` | Change `externalPgsql.database` | Must create the database on the PostgreSQL instance first |
-| **Ingress enabled** | `true` | Set `ingress.enabled: false` to use port-forward only | |
-| **Ingress host** | `ciso.mcaas.example.com` | Change `ingress.hosts[0].host` | **Replace with your actual domain** |
-| SSL passthrough | `true` (nginx annotation) | Remove `ssl-passthrough` annotation if terminating TLS at ingress | CISO Assistant's frontend handles TLS internally |
+| **Ingress** | Standalone Traefik Ingress | Edit `deploy/ingress/ciso-assistant-ingress.yaml` | Not Helm-managed; chart has `ingress.enabled: false` |
+| **Ingress host** | `strategos.mcaas.example.com` | Change `spec.rules[0].host` in the ingress manifest | **Replace with your actual domain** |
+| TLS | cert-manager `selfsigned-issuer` | Change `cert-manager.io/cluster-issuer` annotation | TLS terminated at Traefik ingress |
 | Namespace | `grc` | Change in `deploy/namespaces.yaml` and scripts/deploy.py | |
 | Release name | `ciso-assistant` | Change the helm upgrade release name in scripts/deploy.py | |
 
@@ -127,13 +127,15 @@ All ingress-based services use placeholder hostnames that must be replaced for p
 | Component | Placeholder Hostname | Values File Key | Production Example |
 |-----------|---------------------|-----------------|-------------------|
 | Zammad | `zammad.mcaas.example.com` | `deploy/values/zammad.yaml` → `ingress.hosts[0].host` | `helpdesk.acme.com` |
-| CISO Assistant | `ciso.mcaas.example.com` | `deploy/values/ciso-assistant.yaml` → `ingress.hosts[0].host` | `grc.acme.com` |
+| CISO Assistant | `strategos.mcaas.example.com` | `deploy/ingress/ciso-assistant-ingress.yaml` → `spec.rules[0].host` | `grc.acme.com` |
+| Shuffle | `kydoimos.mcaas.example.com` | `deploy/ingress/` (standalone manifest) | `soar.acme.com` |
+| Wazuh | `deimos.mcaas.example.com` | `deploy/ingress/` (standalone manifest) | `siem.acme.com` |
 
-**Non-ingress services** (PostgreSQL, OpenSearch, Wazuh, Shuffle) are accessed via ClusterIP services inside the cluster. To expose them externally:
+**Non-ingress services** (PostgreSQL, OpenSearch) are accessed via ClusterIP services inside the cluster. To expose them externally:
 
 1. **NodePort**: Add `service.type: NodePort` to the Helm values
 2. **LoadBalancer**: Add `service.type: LoadBalancer` to the Helm values
-3. **Ingress**: Add an ingress section to the Helm values (Shuffle and Wazuh Dashboard support this)
+3. **Ingress**: Create a standalone Ingress manifest
 
 ---
 

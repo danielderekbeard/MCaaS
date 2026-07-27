@@ -23,7 +23,7 @@ MCaaS provides a unified security operations stack with four core components:
 
 ### Step 1: Review Wazuh Dashboard (Deimos)
 
-**URL:** `https://deimos.mcaas.example.com` (or port-forward if internal)
+**URL:** `https://deimos.mcaas.example.com`
 
 #### Morning Checklist
 

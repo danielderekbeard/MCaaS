@@ -11,7 +11,7 @@
 | **OpenSearch** | ✅ Running | N/A | Working |
 | **Shuffle** | ✅ Running | ⚠️ Needs fix | Internal: OK, Ingress: Issue |
 | **Zammad** | ✅ Running | ⚠️ Needs fix | Internal: OK, Ingress: Issue |
-| **CISO Assistant** | ✅ Running | ⚠️ Needs fix | Internal: OK, Ingress: Issue |
+| **CISO Assistant** | ✅ Running | ✅ Ingress OK | Standalone Traefik Ingress at `strategos.mcaas.example.com` |
 | **Wazuh Dashboard** | ✅ Running | ⚠️ Needs fix | Internal: OK, Ingress: Issue |
 | **Wazuh Indexer** | 🟡 Initializing | N/A | ConfigMap fixed, starting up |
 | **Wazuh Manager** | 🟡 Initializing | N/A | Starting up |

@@ -13,14 +13,15 @@
 ## Web Interfaces (Ingress)
 
 All services are exposed via Traefik Ingress (built-in on k3s) with TLS
-by adding the host entries to your hosts file (see Local Access Setup below).
+(cert-manager selfsigned-issuer) by adding the host entries to your hosts
+file (see Local Access Setup below).
 
 | Service | URL | Default Credentials |
 |---------|-----|---------------------|
-| **Alala** (Zammad Ticketing) | [http://alala.mcaas.example.com](http://alala.mcaas.example.com) | `admin` / set on first login |
-| **Strategos** (CISO Assistant GRC) | [http://strategos.mcaas.example.com](http://strategos.mcaas.example.com) | `admin` / set on first login |
-| **Kydoimos** (Shuffle SOAR) | [http://kydoimos.mcaas.example.com](http://kydoimos.mcaas.example.com) | OpenID / configured at first setup |
-| **Deimos** (Wazuh SIEM) | [http://deimos.mcaas.example.com](http://deimos.mcaas.example.com) | `admin` / `SecretPassword` — change immediately |
+| **Alala** (Zammad Ticketing) | [https://alala.mcaas.example.com](https://alala.mcaas.example.com) | `admin` / set on first login |
+| **Strategos** (CISO Assistant GRC) | [https://strategos.mcaas.example.com](https://strategos.mcaas.example.com) | `admin` / set on first login |
+| **Kydoimos** (Shuffle SOAR) | [https://kydoimos.mcaas.example.com](https://kydoimos.mcaas.example.com) | OpenID / configured at first setup |
+| **Deimos** (Wazuh SIEM) | [https://deimos.mcaas.example.com](https://deimos.mcaas.example.com) | `admin` / `SecretPassword` — change immediately |
 
 ## Local Access Setup (Windows)
 
@@ -96,6 +97,7 @@ ingress domains resolve to the LoadBalancer IP:
 
 - **Django Secret Key:** `iMy5xr2RLtO86U3Waqk7ec4zdnhVlm0F`
 - **PostgreSQL connection:** uses `mcaas-postgresql-secret` in `grc` namespace
+- **Ingress:** standalone Traefik Ingress (`deploy/ingress/ciso-assistant-ingress.yaml`) — not Helm-managed
 
 ### Shuffle
 
@@ -131,21 +133,15 @@ ingress domains resolve to the LoadBalancer IP:
 
 ## Port-Forward Quick Reference
 
-Prefer the Ingress URLs above for local access.  These commands are
-provided as fallbacks for debugging or when ingress is unavailable:
+All four web services have Traefik Ingress with TLS. Use the HTTPS URLs above
+for browser access. These port-forward commands are for debugging only:
 
 ```bash
-# Zammad (if ingress is disabled)
-# kubectl port-forward svc/mcaas-zammad -n managed-it 8080:8080
+# CISO Assistant (debugging — ingress is preferred)
+kubectl port-forward -n grc svc/mcaas-ciso-ciso-assistant-frontend 8443:80
 
-# CISO Assistant (if ingress is disabled)
-# kubectl port-forward svc/mcaas-ciso -n grc 8443:8443
-
-# Wazuh Dashboard
+# Wazuh Dashboard (debugging — ingress is preferred)
 kubectl port-forward svc/wazuh-dashboard -n wazuh 8443:5601
-
-# Shuffle
-kubectl port-forward svc/shuffle -n security-ops 3000:80
 
 # PostgreSQL (debugging)
 kubectl port-forward svc/mcaas-postgresql -n managed-it 5432:5432
