@@ -20,7 +20,7 @@ by adding the host entries to your hosts file (see Local Access Setup below).
 | **Alala** (Zammad Ticketing) | [http://alala.mcaas.example.com](http://alala.mcaas.example.com) | `admin` / set on first login |
 | **Strategos** (CISO Assistant GRC) | [http://strategos.mcaas.example.com](http://strategos.mcaas.example.com) | `admin` / set on first login |
 | **Kydoimos** (Shuffle SOAR) | [http://kydoimos.mcaas.example.com](http://kydoimos.mcaas.example.com) | OpenID / configured at first setup |
-| **Deimos** (Wazuh SIEM) | [http://deimos.mcaas.example.com](http://deimos.mcaas.example.com) | `admin` / `SecretPassword` — change immediately |
+| **Deimos** (Wazuh SIEM) | [https://deimos.mcaas.example.com](https://deimos.mcaas.example.com) | `admin` / `SecretPassword` — change immediately |
 
 ## Local Access Setup (Windows)
 
@@ -40,6 +40,23 @@ ingress domains resolve to the LoadBalancer IP:
     ```
 
 3.  Open any of the URLs listed above in your browser.
+
+---
+
+## Post-Deployment Fixes
+
+### Wazuh Dashboard Ingress (Required After Power On)
+
+**Issue**: Wazuh dashboard serves HTTPS with a self-signed certificate. Standard Kubernetes Ingress cannot skip backend TLS verification, causing 404/500 errors.
+
+**Symptoms**: After `poweron`, accessing `https://deimos.mcaas.example.com/` returns 404 or Internal Server Error.
+
+**Fix**:
+```bash
+kubectl apply -f fixes/wazuh-ingress/wazuh-ingress-config.yaml
+```
+
+**Details**: Uses Traefik-native `IngressRoute` + `ServersTransport` CRDs to skip TLS verification for the backend. See `fixes/wazuh-ingress/README.md`.
 
 ---
 

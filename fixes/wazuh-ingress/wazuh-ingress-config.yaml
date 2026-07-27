@@ -1,0 +1,67 @@
+# Wazuh Dashboard Ingress Configuration
+# ======================================
+# Issue: Original ingress used standard Kubernetes Ingress which couldn't handle
+#        Wazuh dashboard's self-signed HTTPS certificate on the backend.
+#
+# Root Cause: Wazuh dashboard serves HTTPS on port 5601 with a self-signed cert.
+#             Traefik couldn't verify the backend certificate (no IP SANs).
+#
+# Solution: Use Traefik native IngressRoute with ServersTransport to skip
+#           TLS verification for the backend connection.
+#
+# Created: 2026-07-27
+# Author: Post-deployment fix
+
+---
+# ServersTransport: Configures Traefik's behavior when connecting to backend
+# The 'insecureSkipVerify: true' allows Traefik to accept Wazuh's self-signed cert
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: wazuh-insecure-transport
+  namespace: wazuh
+spec:
+  insecureSkipVerify: true
+  # Optional: Configure server timeouts
+  # forwardingTimeouts:
+  #   dialTimeout: 30s
+  #   responseHeaderTimeout: 10s
+---
+# Service: Exposes Wazuh dashboard internally
+# Changed from LoadBalancer to ClusterIP as ingress handles external access
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  namespace: wazuh
+  labels:
+    app: wazuh-dashboard
+spec:
+  type: ClusterIP
+  ports:
+    - name: dashboard
+      port: 443        # Service port (what Traefik connects to)
+      targetPort: 5601   # Pod port (Wazuh dashboard HTTPS port)
+      protocol: TCP
+  selector:
+    app: wazuh-dashboard
+---
+# IngressRoute: Traefik native ingress resource
+# Routes external HTTPS traffic to Wazuh dashboard with proper TLS handling
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: mcaas-wazuh-dashboard
+  namespace: wazuh
+spec:
+  entryPoints:
+    - websecure      # Traefik's HTTPS entrypoint (port 443)
+  routes:
+    - match: Host(`deimos.mcaas.example.com`)
+      kind: Rule
+      services:
+        - name: dashboard
+          port: 443
+          serversTransport: wazuh-insecure-transport  # Reference to skip cert verification
+  tls:
+    secretName: wazuh-dashboard-tls  # Frontend TLS cert for deimos.mcaas.example.com

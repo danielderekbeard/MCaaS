@@ -174,6 +174,79 @@ externalPgsql:
 ingress:
   enabled: true
 
+## 6. Wazuh Ingress Configuration
+
+Wazuh Dashboard requires a custom Traefik IngressRoute due to its self-signed HTTPS backend certificate.
+
+### Traefik Resources (CRD)
+
+```yaml
+# ServersTransport: Skip TLS verification for Wazuh's self-signed cert
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: wazuh-insecure-transport
+  namespace: wazuh
+spec:
+  insecureSkipVerify: true
+---
+# Service: ClusterIP type (not LoadBalancer)
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  namespace: wazuh
+  labels:
+    app: wazuh-dashboard
+spec:
+  type: ClusterIP
+  ports:
+    - name: dashboard
+      port: 443
+      targetPort: 5601
+  selector:
+    app: wazuh-dashboard
+---
+# IngressRoute: Traefik-native ingress for HTTPS backend
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: mcaas-wazuh-dashboard
+  namespace: wazuh
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`deimos.mcaas.example.com`)
+      kind: Rule
+      services:
+        - name: dashboard
+          port: 443
+          serversTransport: wazuh-insecure-transport
+  tls:
+    secretName: wazuh-dashboard-tls
+```
+
+### Why This Is Needed
+
+1. **Self-Signed Backend**: Wazuh dashboard serves HTTPS on port 5601 with a self-signed certificate
+2. **Certificate Verification Failure**: Traefik fails with `x509: cannot validate certificate` because the cert lacks IP SANs
+3. **Ingress Limitation**: Standard Kubernetes Ingress cannot configure backend TLS skip verification
+4. **Solution**: Traefik-native `ServersTransport` CRD with `insecureSkipVerify: true`
+
+### Post-Deployment Fix
+
+After `poweron`, if Wazuh ingress returns 404 or 500 errors:
+
+```bash
+kubectl apply -f fixes/wazuh-ingress/wazuh-ingress-config.yaml
+```
+
+### References
+
+- Stored in: `fixes/wazuh-ingress/`
+- See `fixes/wazuh-ingress/README.md` for detailed troubleshooting
+
 5. Secrets Architecture
 
 Kubernetes secrets are namespace-scoped, so services that need cross-namespace access
