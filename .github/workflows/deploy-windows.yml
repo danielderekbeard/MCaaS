@@ -70,7 +70,7 @@ jobs:
           if ("${{ inputs.client }}") {
             $args = @("--client", "${{ inputs.client }}")
           }
-          python deploy.py @args
+          python scripts/deploy.py @args
         env:
           MCAAS_POSTGRES_PASSWORD: ${{ secrets.MCAAS_POSTGRES_PASSWORD }}
           MCAAS_OPENSEARCH_PASSWORD: ${{ secrets.MCAAS_OPENSEARCH_PASSWORD }}

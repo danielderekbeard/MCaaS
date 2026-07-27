@@ -336,7 +336,7 @@ Raw Events → Wazuh Filter → Shuffle Enrichment → Analyst Review
 
 ### For Technical Teams
 
-1. **Review documentation** - `/documentation/guides/`
+1. **Review docs** - `/docs/guides/`
 2. **Deploy to test** - Use the automated scripts
 3. **Configure integrations** - Wazuh → Shuffle → Zammad
 4. **Train analysts** - SOC quickstart guide

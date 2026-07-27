@@ -435,7 +435,7 @@ def delete_base_manifests(cfg):
         )
 
 
-def cleanup_tmp():
+def cleanup_tmp(args):
     """Remove cloned repositories from .tmp directory and .env file."""
     logging.info("Cleaning up cloned repositories...")
     wazuh_dir = TMP_DIR / "wazuh-kubernetes"
@@ -450,7 +450,7 @@ def cleanup_tmp():
         logging.info("No .env file found, nothing to clean up.")
         return
 
-    if PURGE_SECRETS:
+    if args.purge_secrets:
         env_file.unlink()
         logging.warning(f"Removed {env_file} (--purge-secrets)")
         return
@@ -487,6 +487,11 @@ def main():
         "--skip-cleanup",
         action="store_true",
         help="Skip cleanup of cloned repositories in .tmp directory",
+    )
+    parser.add_argument(
+        "--purge-secrets",
+        action="store_true",
+        help="Delete .env file instead of backing it up (WARNING: secrets will be lost)",
     )
     args = parser.parse_args()
 
@@ -533,7 +538,7 @@ def main():
         if args.skip_cleanup:
             logging.info("Skipping .tmp cleanup (--skip-cleanup flag set).")
         else:
-            cleanup_tmp()
+            cleanup_tmp(args)
 
         logging.info("Teardown complete!")
 

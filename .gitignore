@@ -15,6 +15,7 @@ logs/
 # Sensitive files
 wazuh-cert.b64.txt
 wazuh-key.b64.txt
+docs/aws/inventory.md
 
 # Temporary/downloaded Helm charts
 shuffle-chart-temp/
@@ -23,8 +24,9 @@ zammad-chart-temp/
 # Cloned repositories
 wazuh-kubernetes/
 
-# Session documentation output — not for commit
-docs/
-AWS_DEPLOYMENT_GUIDE.md
-CONFIGURATION_MATRIX.md
-SESSION_SUMMARY.md
+# Test/debug artifacts (moved to tests/data/ but exclude from root too)
+action_results.json
+http_action.json
+execution_result.json
+execution_result.txt
+test-alert*.json

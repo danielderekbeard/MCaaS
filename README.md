@@ -101,7 +101,7 @@ Choose one deployment method:
 
 **Option A: Python (Recommended for Windows)**
 ```powershell
-python deploy.py
+python scripts/deploy.py
 ```
 
 **Option B: PowerShell Wrapper (Windows)**
@@ -145,7 +145,7 @@ The deployment uses the following Kubernetes secrets:
 
 The PostgreSQL secret is created in both the `managed-it` and `grc` namespaces because CISO Assistant (in `grc`) needs cross-namespace access to the PostgreSQL credentials.
 
-When using `deploy.py`, secrets are created automatically via kubectl commands embedded in the script. Passwords are sourced from environment variables (`MCAAS_POSTGRES_PASSWORD`, `MCAAS_OPENSEARCH_PASSWORD`, `MCAAS_REDIS_PASSWORD`, `MCAAS_DJANGO_SECRET_KEY`) or auto-generated and persisted to `.env`.
+When using `scripts/deploy.py`, secrets are created automatically via kubectl commands embedded in the script. Passwords are sourced from environment variables (`MCAAS_POSTGRES_PASSWORD`, `MCAAS_OPENSEARCH_PASSWORD`, `MCAAS_REDIS_PASSWORD`, `MCAAS_DJANGO_SECRET_KEY`) or auto-generated and persisted to `.env`.
 
 ## CI / GitHub Actions
 
@@ -271,7 +271,7 @@ python scripts/check-prerequisites.py
 **Solutions**:
 - Install Python from https://www.python.org/
 - Add Python to your PATH: `python -m pip install --upgrade pip`
-- Use `py` instead: `py deploy.py`
+- Use `py` instead: `py scripts/deploy.py`
 
 ### kubeconfig not configured
 
@@ -292,7 +292,7 @@ $env:KUBECONFIG = "C:\path\to\kubeconfig"
 
 **Solutions**:
 - Check if services are running: `kubectl get pods -A`
-- Increase timeout in `deploy.py` (search for `--timeout`)
+- Increase timeout in `scripts/deploy.py` (search for `--timeout`)
 - Check resource availability: `kubectl top nodes`
 
 ### Wazuh deployment failures (Windows-specific)
@@ -304,7 +304,7 @@ $env:KUBECONFIG = "C:\path\to\kubeconfig"
 
 ## Notes
 
-- Chart repository URLs and release names are configured in `deploy.py`.
+- Chart repository URLs and release names are configured in `scripts/deploy.py`.
 - The `shuffle` chart is installed from OCI registry (`oci://ghcr.io/shuffle/charts/shuffle`).
 - The `zammad` chart is installed from OCI registry (`oci://ghcr.io/zammad/charts/zammad`).
 - The `ciso-assistant` chart is installed from its OCI registry on GHCR (`oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant`), version `0.11.4`.
@@ -317,7 +317,7 @@ $env:KUBECONFIG = "C:\path\to\kubeconfig"
 - **PostgreSQL** is the shared database backend for Zammad and CISO Assistant, deployed once in `managed-it` namespace.
 - **Redis** is deployed as a Bitnami sub-chart of Zammad, providing in-memory caching for the helpdesk.
 - **OpenSearch** is the shared search/indexing backend for Wazuh and Shuffle, deployed once in `security-ops` namespace.
-- Database names use hyphens (e.g. `ciso-assistant`, not `ciso_assistant`) and are created by `deploy.py` before their respective Helm releases.
+- Database names use hyphens (e.g. `ciso-assistant`, not `ciso_assistant`) and are created by `scripts/deploy.py` before their respective Helm releases.
 - The PostgreSQL service is named `mcaas-postgresql` (not `mcaas-postgresql-postgresql`) — the Bitnami chart's `fullnameOverride` removes the chart-name suffix.
-- On Windows, `deploy.py` pipes SQL commands via stdin to `kubectl exec -i` instead of using psql's `-c` flag to avoid PowerShell stripping double-quotes around hyphenated identifiers.
+- On Windows, `scripts/deploy.py` pipes SQL commands via stdin to `kubectl exec -i` instead of using psql's `-c` flag to avoid PowerShell stripping double-quotes around hyphenated identifiers.
 

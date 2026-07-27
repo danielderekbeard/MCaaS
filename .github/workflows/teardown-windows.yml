@@ -60,4 +60,4 @@ jobs:
           if ("${{ inputs.client }}") {
             $args = @("--client", "${{ inputs.client }}")
           }
-          python teardown.py @args
+          python scripts/teardown.py @args

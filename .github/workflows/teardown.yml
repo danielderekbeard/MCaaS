@@ -49,4 +49,4 @@ jobs:
           if [ -n "${{ inputs.client }}" ]; then
             ARGS="--client ${{ inputs.client }}"
           fi
-          python teardown.py $ARGS
+          python scripts/teardown.py $ARGS

@@ -18,7 +18,7 @@ set -euo pipefail
 
 SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="${SCRIPT_ROOT}/.."
-DEPLOYER="${PROJECT_ROOT}/deploy-aws.py"
+DEPLOYER="${PROJECT_ROOT}/scripts/deploy-aws.py"
 LOG_DIR="${PROJECT_ROOT}/logs"
 
 # Logging setup

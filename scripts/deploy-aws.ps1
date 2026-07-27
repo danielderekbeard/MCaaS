@@ -32,7 +32,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Split-Path -Parent $scriptRoot
-$deployer = Join-Path $projectRoot 'deploy-aws.py'
+$deployer = Join-Path $projectRoot 'scripts\deploy-aws.py'
 $logDir = Join-Path $projectRoot 'logs'
 $logFile = Join-Path $logDir ("deploy-aws-{0}.log" -f (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmssZ"))
 

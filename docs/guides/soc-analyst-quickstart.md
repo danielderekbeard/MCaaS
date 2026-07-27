@@ -277,7 +277,7 @@ For Level 12+ alerts or confirmed compromise:
 1. **Complete onboarding:** Request access to all systems
 2. **Shadow a senior analyst:** Learn investigation patterns
 3. **Review past incidents:** Search closed Zammad tickets
-4. **Read the Runbooks:** See `/documentation/runbooks/`
+4. **Read the Runbooks:** See `/docs/runbooks/`
 5. **Join the SOC channel:** Slack #soc-team
 
 ---

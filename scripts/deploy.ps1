@@ -17,7 +17,7 @@ $ErrorActionPreference = 'Stop'
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Split-Path -Parent $scriptRoot
 $envFile = Join-Path $projectRoot '.env'
-$deployer = Join-Path $projectRoot 'deploy.py'
+$deployer = Join-Path $projectRoot 'scripts\deploy.py'
 $logDir = Join-Path $projectRoot 'logs'
 $logFile = Join-Path $logDir ("deploy-{0}.log" -f (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmssZ"))
 

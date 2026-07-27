@@ -56,7 +56,7 @@ jobs:
           if [ -n "${{ inputs.client }}" ]; then
             ARGS="--client ${{ inputs.client }}"
           fi
-          python deploy.py $ARGS
+          python scripts/deploy.py $ARGS
         env:
           MCAAS_POSTGRES_PASSWORD: ${{ secrets.MCAAS_POSTGRES_PASSWORD }}
           MCAAS_OPENSEARCH_PASSWORD: ${{ secrets.MCAAS_OPENSEARCH_PASSWORD }}
