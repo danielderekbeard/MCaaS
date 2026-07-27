@@ -6,13 +6,27 @@ This directory contains integration scripts and tools for the Managed Compliance
 
 ```
 integrations/
-├── patch-wazuh-configmap-enhanced.py  # Enhanced ConfigMap patcher with error handling
+├── patch-wazuh-configmap-enhanced.py  # Enhanced ConfigMap patcher
+├── common/                            # Shared utilities
+│   └── alert_filter.py               # Intelligent alert filtering
 ├── shuffle/                           # Shuffle SOAR integration
 │   ├── workflow-enhancer.py          # Workflow enhancement script
 │   └── requirements.txt
 ├── wazuh-zammad/                      # Wazuh to Zammad ticket integration
-│   ├── ticket-creator.py             # Ticket creation script with deduplication
+│   ├── ticket_creator.py             # Ticket creation script
+│   ├── webhook_server.py             # Webhook receiver
+│   ├── Dockerfile
+│   ├── k8s-deployment.yaml
 │   └── requirements.txt
+├── ciso-assistant/                    # CISO Assistant compliance mapping
+│   ├── compliance_mapper.py          # Compliance mapper script
+│   └── k8s-deployment.yaml
+├── multi-channel/                     # Multi-channel alert distribution
+│   ├── webhook_handler.py            # Teams/Slack/PagerDuty/Email handler
+│   └── k8s-deployment.yaml
+├── threat-intel/                      # Threat intelligence enrichment
+│   ├── enricher.py                   # VirusTotal/AbuseIPDB/MISP client
+│   └── k8s-deployment.yaml
 └── health/                            # Health monitoring
     ├── health-check.py               # Integration health checker
     └── requirements.txt
@@ -72,7 +86,106 @@ python integrations/wazuh-zammad/ticket-creator.py --cleanup-state
 - `ZAMMAD_CUSTOMER_ID` - Default customer ID (default: 2)
 - `TICKET_DEDUPLICATION_WINDOW` - Hours for deduplication (default: 24)
 
-### shuffle/workflow-enhancer.py
+### ciso-assistant/compliance_mapper.py
+
+Maps Wazuh alerts to compliance frameworks (ISO 27001, NIST, SOC2) and creates findings:
+
+- **Framework Mapping**: Automatic control mapping based on alert groups
+- **Multi-Framework**: Support for ISO27001, NIST, SOC2
+- **Finding Creation**: Auto-create compliance findings in CISO Assistant
+- **Evidence Tracking**: Include alert data as compliance evidence
+
+```bash
+# Map alert to ISO 27001
+python integrations/ciso-assistant/compliance_mapper.py --alert-file alert.json --framework iso27001
+
+# Map to all frameworks
+python integrations/ciso-assistant/compliance_mapper.py --alert-file alert.json --all-frameworks
+
+# List available mappings
+python integrations/ciso-assistant/compliance_mapper.py --list-mappings
+```
+
+**Environment Variables:**
+- `CISO_ASSISTANT_URL` - CISO Assistant API URL
+- `CISO_ASSISTANT_API_KEY` - API authentication key
+- `DEFAULT_FRAMEWORK` - Default framework (iso27001, nist, soc2)
+- `AUTO_CREATE_FINDINGS` - Automatically create findings (true/false)
+
+### multi-channel/webhook_handler.py
+
+Multi-channel alert distribution to Teams, Slack, PagerDuty, and Email:
+
+- **Severity Routing**: Automatic channel selection based on alert level
+- **Microsoft Teams**: Rich card notifications
+- **Slack**: Block-based messages with markdown
+- **PagerDuty**: Events API v2 integration with dedup key
+- **Email**: SMTP notifications to SOC team
+
+```bash
+# Start webhook server
+python integrations/multi-channel/webhook_handler.py --port 8081
+
+# Test with sample alert
+python integrations/multi-channel/webhook_handler.py --test
+
+# Send test via curl
+curl -X POST http://localhost:8081/webhook/alert \
+  -H "Content-Type: application/json" \
+  -d '{"rule": {"id": "100001", "description": "Test", "level": 10}, "agent": {"name": "test"}}'
+```
+
+**Environment Variables:**
+- `TEAMS_WEBHOOK_URL` - Microsoft Teams webhook URL
+- `SLACK_WEBHOOK_URL` - Slack webhook URL
+- `PAGERDUTY_ROUTING_KEY` - PagerDuty Events API routing key
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` - Email configuration
+- `SOC_EMAIL` - SOC team email address
+
+### threat-intel/enricher.py
+
+Threat intelligence enrichment with VirusTotal, AbuseIPDB, and MISP:
+
+- **IOC Extraction**: Automatic extraction of IPs, hashes, and URLs from alerts
+- **VirusTotal**: File hash and IP reputation lookups
+- **AbuseIPDB**: IP abuse confidence scoring
+- **MISP**: Threat sharing platform integration
+- **Threat Scoring**: Combined threat score calculation
+- **Caching**: Results cached to minimize API calls
+
+```bash
+# Enrich alert from file
+python integrations/threat-intel/enricher.py --alert-file alert.json --stdout
+
+# Enrich specific IP
+python integrations/threat-intel/enricher.py --ip 1.2.3.4
+
+# Enrich specific hash
+python integrations/threat-intel/enricher.py --hash abc123...
+```
+
+**Environment Variables:**
+- `VIRUSTOTAL_API_KEY` - VirusTotal API key
+- `ABUSEIPDB_API_KEY` - AbuseIPDB API key
+- `MISP_URL`, `MISP_API_KEY` - MISP configuration
+- `ENRICHMENT_CACHE_TTL` - Cache time-to-live in seconds (default: 3600)
+
+### common/alert_filter.py
+
+Intelligent alert filtering and routing:
+
+- **Rule Filtering**: Filter by groups, IDs, or severity
+- **Time-Based**: After-hours alert handling
+- **Custom Rules**: Python expression-based filters
+- **Multi-Destination**: Route to different outputs
+
+```bash
+# Generate sample config
+python integrations/common/alert_filter.py --generate-config > filters.yaml
+
+# Filter alerts
+python integrations/common/alert_filter.py --alert-file alerts.json --config filters.yaml --stdout
+```
 
 Enhances Shuffle workflows with advanced features:
 
