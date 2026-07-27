@@ -12,7 +12,7 @@ _This document is auto-generated and will be populated during the session._
 
 ### Teardown is a Two-Step Process
 
-**Never** run `deploy-aws.py --tear-down` alone. The correct procedure is:
+**Never** run `scripts/deploy-aws.py --tear-down` alone. The correct procedure is:
 
 #### Step 1 — Remove Kubernetes Resources (MUST BE DONE FIRST)
 

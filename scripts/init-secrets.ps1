@@ -81,7 +81,7 @@ try {
             $env:MCAAS_DJANGO_SECRET_KEY = New-RandomPassword -length 50
             # Write UTF-8 WITHOUT a BOM. Set-Content defaults to ANSI in PS 5.1
             # and its -Encoding utf8 still emits a BOM, which corrupts the first
-            # key when deploy.py reads the file.
+            # key when scripts/deploy.py reads the file.
             $envBody = "MCAAS_POSTGRES_PASSWORD=$($env:MCAAS_POSTGRES_PASSWORD)`nMCAAS_OPENSEARCH_PASSWORD=$($env:MCAAS_OPENSEARCH_PASSWORD)`nMCAAS_REDIS_PASSWORD=$($env:MCAAS_REDIS_PASSWORD)`nMCAAS_DJANGO_SECRET_KEY=$($env:MCAAS_DJANGO_SECRET_KEY)`n"
             [System.IO.File]::WriteAllText($envFile, $envBody, (New-Object System.Text.UTF8Encoding($false)))
             Log "Successfully created .env with generated passwords. Please back this file up if you need to redeploy."

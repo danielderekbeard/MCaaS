@@ -20,13 +20,13 @@ configuration lives in:
   - clients/aws/values/            — AWS-optimized Helm values
 
 Usage:
-  python deploy-aws.py                           # Full deployment
-  python deploy-aws.py --dry-run                 # Dry-run (no changes)
-  python deploy-aws.py --client aws              # Use AWS client config
-  python deploy-aws.py --skip-cluster            # Skip cluster creation
-  python deploy-aws.py --skip-infrastructure     # Skip AWS infra setup
-  python deploy-aws.py --tear-down               # Destroy the EKS cluster
-  python deploy-aws.py --cloudflare-token TOKEN   # Enable Cloudflare DNS01
+  python scripts/deploy-aws.py                           # Full deployment
+  python scripts/deploy-aws.py --dry-run                 # Dry-run (no changes)
+  python scripts/deploy-aws.py --client aws              # Use AWS client config
+  python scripts/deploy-aws.py --skip-cluster            # Skip cluster creation
+  python scripts/deploy-aws.py --skip-infrastructure     # Skip AWS infra setup
+  python scripts/deploy-aws.py --tear-down               # Destroy the EKS cluster
+  python scripts/deploy-aws.py --cloudflare-token TOKEN   # Enable Cloudflare DNS01
 """
 
 import os
@@ -2290,15 +2290,15 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python deploy-aws.py                           # Full deployment
-  python deploy-aws.py --dry-run                  # Dry-run (no changes)
-  python deploy-aws.py --client aws               # Use AWS client config
-  python deploy-aws.py --skip-cluster             # Skip EKS cluster creation
-  python deploy-aws.py --skip-infrastructure      # Skip AWS infra setup (just apps)
-  python deploy-aws.py --skip-ingress             # Skip cert and ingress setup
-  python deploy-aws.py --only-ingress             # Only apply certs and ingress
-  python deploy-aws.py --tear-down                # Delete the EKS cluster
-  python deploy-aws.py --cloudflare-token TOKEN   # Enable Cloudflare DNS01
+  python scripts/deploy-aws.py                           # Full deployment
+  python scripts/deploy-aws.py --dry-run                  # Dry-run (no changes)
+  python scripts/deploy-aws.py --client aws               # Use AWS client config
+  python scripts/deploy-aws.py --skip-cluster             # Skip EKS cluster creation
+  python scripts/deploy-aws.py --skip-infrastructure      # Skip AWS infra setup (just apps)
+  python scripts/deploy-aws.py --skip-ingress             # Skip cert and ingress setup
+  python scripts/deploy-aws.py --only-ingress             # Only apply certs and ingress
+  python scripts/deploy-aws.py --tear-down                # Delete the EKS cluster
+  python scripts/deploy-aws.py --cloudflare-token TOKEN   # Enable Cloudflare DNS01
         """,
     )
     parser.add_argument(

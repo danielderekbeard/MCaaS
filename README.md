@@ -1,15 +1,22 @@
 # MCaaS Deployment Automation
 
-This workspace contains a repeatable deployment automation scaffold for the MCaaS stack described in `mcaas.md`.
+This workspace contains a repeatable deployment automation scaffold for the MCaaS stack described in `docs/mcaas.md`.
 
 ## What is included
 
-- `deploy/namespaces.yaml` and `deploy/kustomization.yaml` for namespace provisioning
-- `deploy/values/*.yaml` Helm values for the core services
-- `scripts/` automation scripts for secrets, deployment, and teardown
-- `.github/workflows/deploy.yml` GitHub Actions deployment workflow
-- `.gitignore` to protect local secrets and generated files
-- `logs/` directory for per-run deployment logs
+- `scripts/` — automation scripts (`deploy.py`, `deploy-aws.py`, `teardown.py`, `status.py`, `power_manager.py`, `modify_workflow.py`, shell wrappers, and init-secrets)
+- `deploy/` — Kubernetes manifests, Kustomize overlays, and Helm values for core services
+- `configs/` — configuration templates and patches (Wazuh, Shuffle, Zammad, CISO Assistant)
+- `docs/` — documentation (guides, runbooks, changelogs, AWS deployment, architecture)
+- `aws/` — AWS/infrastructure-specific manifests (EKS, ingress, storage classes, certificates)
+- `clients/` — per-client configuration templates
+- `integrations/` — integration scripts (Zammad, CISO Assistant, threat intel, Shuffle)
+- `code_examples/` — example integration scripts
+- `fixes/` — post-deployment fix scripts (Wazuh ingress, etc.)
+- `tests/` — test scripts and fixtures
+- `logs/` — per-run deployment logs (gitignored)
+- `.github/workflows/` — CI/CD workflows (deploy, teardown, health-check)
+- `.gitignore` — protects local secrets and generated files
 
 ## Prerequisites
 
@@ -309,7 +316,7 @@ $env:KUBECONFIG = "C:\path\to\kubeconfig"
 - The `zammad` chart is installed from OCI registry (`oci://ghcr.io/zammad/charts/zammad`).
 - The `ciso-assistant` chart is installed from its OCI registry on GHCR (`oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant`), version `0.11.4`.
 - The `wazuh` deployment uses the official manifest-based installation from the `wazuh-kubernetes` GitHub repository.
-- The helm values in `deploy/values/` are derived from the infrastructure manifest definitions in `mcaas.md`.
+- The helm values in `deploy/values/` are derived from the infrastructure manifest definitions in `docs/mcaas.md`.
 - On Windows, deployment logs are written to `logs/deploy-*.log` files in UTC timestamps.
 
 ### Architecture Details
