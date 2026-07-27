@@ -1,0 +1,240 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MCaaS Alert Flow Workflow</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f8fafc;
+    --fg: #172033;
+    --muted: #5b6475;
+    --line: #64748b;
+    --neutral: #e2e8f0;
+    --input: #bfdbfe;
+    --process: #c7d2fe;
+    --storage: #99f6e4;
+    --external: #fde68a;
+    --risk: #fecaca;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a;
+      --fg: #e5e7eb;
+      --muted: #a3adbd;
+      --line: #94a3b8;
+      --neutral: #334155;
+      --input: #1d4ed8;
+      --process: #4338ca;
+      --storage: #0f766e;
+      --external: #92400e;
+      --risk: #991b1b;
+    }
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  main {
+    max-width: 1200px;
+    margin: 32px auto;
+    padding: 0 20px;
+  }
+  svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .title {
+    font-size: 20px;
+    font-weight: 650;
+    fill: var(--fg);
+  }
+  .label {
+    font-size: 14px;
+    font-weight: 600;
+    fill: var(--fg);
+  }
+  .small {
+    font-size: 12px;
+    fill: var(--muted);
+  }
+  .node {
+    stroke: var(--line);
+    stroke-width: 1;
+  }
+  .neutral {
+    fill: var(--neutral);
+  }
+  .input {
+    fill: var(--input);
+  }
+  .process {
+    fill: var(--process);
+  }
+  .storage {
+    fill: var(--storage);
+  }
+  .external {
+    fill: var(--external);
+  }
+  .risk {
+    fill: var(--risk);
+  }
+  .edge {
+    stroke: var(--line);
+    stroke-width: 2;
+    fill: none;
+  }
+  .edge-dashed {
+    stroke: var(--line);
+    stroke-width: 1.5;
+    fill: none;
+    stroke-dasharray: 8 4;
+  }
+  .arrow-head {
+    fill: var(--line);
+  }
+</style>
+<main>
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <!-- Title -->
+    <text x="600" y="40" text-anchor="middle" class="title">Security Alert Flow: Wazuh → Shuffle → Zammad</text>
+
+    <!-- Step 1: Detection -->
+    <rect x="80" y="100" width="200" height="100" rx="8" class="node risk" />
+    <text x="180" y="140" text-anchor="middle" class="label">Step 1: Detection</text>
+    <text x="180" y="165" text-anchor="middle" class="small">Wazuh Agent</text>
+    <text x="180" y="182" text-anchor="middle" class="small">Malware/Threat Detected</text>
+
+    <!-- Arrow 1 -->
+    <polygon points="310,150 330,140 330,160" fill="var(--line)" />
+    <line x1="280" y1="150" x2="330" y2="150" class="edge" />
+
+    <!-- Step 2: Alert Generation -->
+    <rect x="350" y="100" width="200" height="100" rx="8" class="node risk" />
+    <text x="450" y="140" text-anchor="middle" class="label">Step 2: Alert</text>
+    <text x="450" y="165" text-anchor="middle" class="small">Wazuh Manager</text>
+    <text x="450" y="182" text-anchor="middle" class="small">Level 5+ Alert Generated</text>
+
+    <!-- Arrow 2 -->
+    <polygon points="580,150 600,140 600,160" fill="var(--line)" />
+    <line x1="550" y1="150" x2="600" y2="150" class="edge" />
+
+    <!-- Step 3: Webhook -->
+    <rect x="620" y="100" width="200" height="100" rx="8" class="node process" />
+    <text x="720" y="140" text-anchor="middle" class="label">Step 3: Trigger</text>
+    <text x="720" y="165" text-anchor="middle" class="small">Shuffle Webhook</text>
+    <text x="720" y="182" text-anchor="middle" class="small">JSON Payload Received</text>
+
+    <!-- Arrow 3 -->
+    <polygon points="850,150 870,140 870,160" fill="var(--line)" />
+    <line x1="820" y1="150" x2="870" y2="150" class="edge" />
+
+    <!-- Step 4: Enrichment -->
+    <rect x="890" y="80" width="250" height="140" rx="8" class="node process" />
+    <text x="1015" y="115" text-anchor="middle" class="label">Step 4: Enrichment</text>
+    <text x="1015" y="145" text-anchor="middle" class="small">Shuffle Workflow Actions:</text>
+    <text x="1015" y="165" text-anchor="middle" class="small">• VirusTotal lookup</text>
+    <text x="1015" y="182" text-anchor="middle" class="small">• IP reputation check</text>
+    <text x="1015" y="199" text-anchor="middle" class="small">• Wazuh agent details</text>
+
+    <!-- Vertical connector -->
+    <polygon points="1015,220 1005,240 1025,240" fill="var(--line)" />
+    <line x1="1015" y1="220" x2="1015" y2="280" class="edge" />
+
+    <!-- Step 5: Decision -->
+    <polygon points="1015,280 935,340 1015,400 1095,340" class="node input" />
+    <text x="1015" y="345" text-anchor="middle" class="label">Decision</text>
+
+    <!-- Branches -->
+    <line x1="935" y1="340" x2="800" y2="340" class="edge-dashed" />
+    <polygon points="780,340 800,330 800,350" fill="var(--line)" />
+
+    <line x1="1095" y1="340" x2="1230" y2="340" class="edge-dashed" />
+    <polygon points="1250,340 1230,330 1230,350" fill="var(--line)" />
+
+    <!-- Low severity branch -->
+    <rect x="580" y="290" width="200" height="100" rx="8" class="node neutral" />
+    <text x="680" y="330" text-anchor="middle" class="label" style="font-size: 13px;">Low Severity</text>
+    <text x="680" y="355" text-anchor="middle" class="small">Log to OpenSearch</text>
+    <text x="680" y="372" text-anchor="middle" class="small">No Ticket Created</text>
+
+    <!-- High severity branch -->
+    <rect x="1250" y="290" width="200" height="100" rx="8" class="node risk" />
+    <text x="1350" y="330" text-anchor="middle" class="label" style="font-size: 13px;">High Severity</text>
+    <text x="1350" y="355" text-anchor="middle" class="small">Create Zammad Ticket</text>
+    <text x="1350" y="372" text-anchor="middle" class="small">Notify SOC Team</text>
+
+    <!-- Step 6: Ticket Created -->
+    <rect x="1250" y="450" width="200" height="100" rx="8" class="node process" />
+    <text x="1350" y="490" text-anchor="middle" class="label">Step 5: Ticket</text>
+    <text x="1350" y="515" text-anchor="middle" class="small">Zammad Helpdesk</text>
+    <text x="1350" y="532" text-anchor="middle" class="small">Assigned to Analyst</text>
+
+    <!-- Arrow -->
+    <polygon points="1350,440 1340,450 1360,450" fill="var(--line)" />
+    <line x1="1350" y1="390" x2="1350" y2="440" class="edge" />
+
+    <!-- Step 7: Analyst Action -->
+    <rect x="950" y="450" width="200" height="100" rx="8" class="node input" />
+    <text x="1050" y="490" text-anchor="middle" class="label">Step 6: Investigate</text>
+    <text x="1050" y="515" text-anchor="middle" class="small">SOC Analyst</text>
+    <text x="1050" y="532" text-anchor="middle" class="small">Reviews Enriched Data</text>
+
+    <!-- Arrow -->
+    <polygon points="1150,500 1170,490 1170,510" fill="var(--line)" />
+    <line x1="1150" y1="500" x2="1250" y2="500" class="edge-dashed" />
+
+    <!-- Step 8: Response -->
+    <rect x="620" y="450" width="200" height="100" rx="8" class="node risk" />
+    <text x="720" y="490" text-anchor="middle" class="label">Step 7: Response</text>
+    <text x="720" y="515" text-anchor="middle" class="small">Shuffle Action</text>
+    <text x="720" y="532" text-anchor="middle" class="small">Isolate/Cleanup</text>
+
+    <!-- Arrow -->
+    <polygon points="950,500 930,490 930,510" fill="var(--line)" />
+    <line x1="950" y1="500" x2="820" y2="500" class="edge-dashed" />
+
+    <!-- Step 9: Resolution -->
+    <rect x="320" y="450" width="200" height="100" rx="8" class="node storage" />
+    <text x="420" y="490" text-anchor="middle" class="label">Step 8: Resolve</text>
+    <text x="420" y="515" text-anchor="middle" class="small">Close Ticket</text>
+    <text x="420" y="532" text-anchor="middle" class="small">Document in CISO Assistant</text>
+
+    <!-- Arrow -->
+    <polygon points="620,500 600,490 600,510" fill="var(--line)" />
+    <line x1="620" y1="500" x2="520" y2="500" class="edge" />
+
+    <!-- Step 10: Compliance -->
+    <rect x="80" y="450" width="200" height="100" rx="8" class="node process" />
+    <text x="180" y="490" text-anchor="middle" class="label">Step 9: GRC</text>
+    <text x="180" y="515" text-anchor="middle" class="small">CISO Assistant</text>
+    <text x="180" y="532" text-anchor="middle" class="small">Compliance Tracking</text>
+
+    <!-- Arrow -->
+    <polygon points="320,500 300,490 300,510" fill="var(--line)" />
+    <line x1="320" y1="500" x2="280" y2="500" class="edge-dashed" />
+
+    <!-- Legend -->
+    <rect x="80" y="600" width="1040" height="160" rx="8" stroke="var(--line)" fill="none" stroke-width="1" />
+    <text x="100" y="630" class="label" style="font-size: 14px;">Timeline Legend</text>
+
+    <rect x="100" y="650" width="150" height="80" rx="4" class="node risk" />
+    <text x="175" y="695" text-anchor="middle" class="small">Security Event</text>
+
+    <rect x="270" y="650" width="150" height="80" rx="4" class="node process" />
+    <text x="345" y="695" text-anchor="middle" class="small">Automation</text>
+
+    <rect x="440" y="650" width="150" height="80" rx="4" class="node input" />
+    <text x="515" y="695" text-anchor="middle" class="small">Human Action</text>
+
+    <rect x="610" y="650" width="150" height="80" rx="4" class="node storage" />
+    <text x="685" y="695" text-anchor="middle" class="small">Documentation</text>
+
+    <text x="800" y="670" class="small">Solid arrow: Automated flow</text>
+    <text x="800" y="690" class="small">Dashed arrow: Human/API action</text>
+    <text x="800" y="710" class="small">Decision diamond: Conditional branching</text>
+  </svg>
+</main>
