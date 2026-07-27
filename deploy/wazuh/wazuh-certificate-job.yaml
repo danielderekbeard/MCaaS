@@ -1,0 +1,35 @@
+# Job to verify and fix Wazuh certificates
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fix-wazuh-certs
+  namespace: wazuh
+spec:
+  template:
+    spec:
+      containers:
+      - name: cert-tool
+        image: alpine/openssl:latest
+        command:
+        - sh
+        - -c
+        - |
+          echo "Checking certificates..."
+          echo "=== tls.crt ==="
+          openssl x509 -in /certs/tls.crt -text -noout 2>&1 | head -20 || echo "Failed to read tls.crt"
+          echo ""
+          echo "=== ca.crt ==="
+          openssl x509 -in /certs/ca.crt -text -noout 2>&1 | head -20 || echo "Failed to read ca.crt"
+          echo ""
+          echo "Files in /certs:"
+          ls -la /certs/
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+      volumes:
+      - name: certs
+        secret:
+          secretName: wazuh-indexer-certs
+      restartPolicy: Never
+  backoffLimit: 1

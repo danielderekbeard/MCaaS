@@ -446,11 +446,23 @@ def cleanup_tmp():
         logging.info("No Wazuh clone directory found, nothing to clean up.")
 
     env_file = PROJECT_ROOT / ".env"
-    if env_file.exists():
-        env_file.unlink()
-        logging.info(f"Removed {env_file}")
-    else:
+    if not env_file.exists():
         logging.info("No .env file found, nothing to clean up.")
+        return
+
+    if PURGE_SECRETS:
+        env_file.unlink()
+        logging.warning(f"Removed {env_file} (--purge-secrets)")
+        return
+
+    # Preserve by default. .env holds the ONLY copy of the generated
+    # PostgreSQL/OpenSearch/Django secrets; deleting it while PVCs survive
+    # (e.g. --skip-pvcs) leaves the data unrecoverable on redeploy.
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%SZ")
+    backup = PROJECT_ROOT / f".env.bak-{stamp}"
+    env_file.rename(backup)
+    logging.info(f"Preserved secrets: {env_file} -> {backup}")
+    logging.info("Use --purge-secrets to delete it instead.")
 
 
 def main():

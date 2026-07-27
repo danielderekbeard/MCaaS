@@ -1,13 +1,33 @@
 postgresql:
   enabled: false
 global:
-  domain: strategos.mcaas.example.com
+  domain: ciso.mcaas.example.com
   tls: true
 backend:
   config:
     databaseType: externalPgsql
     djangoSecretKey: ""  # Sourced from mcaas-ciso-secret via djangoExistingSecretKey
     djangoExistingSecretKey: "mcaas-ciso-secret"
+  initContainers:
+    - name: wait-for-db
+      image: postgres:15-alpine
+      command:
+        - sh
+        - -c
+        - |
+          until pg_isready -h mcaas-postgresql.managed-it.svc.cluster.local -p 5432 -U postgres; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+          echo "PostgreSQL is ready"
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h mcaas-postgresql.managed-it.svc.cluster.local -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'ciso-assistant'" | grep -q 1 || psql -h mcaas-postgresql.managed-it.svc.cluster.local -U postgres -c "CREATE DATABASE \"ciso-assistant\""
+          echo "Database check complete"
+      env:
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mcaas-postgresql-secret
+              key: postgres-password
 externalPgsql:
   host: "mcaas-postgresql.managed-it.svc.cluster.local"
   port: 5432
@@ -15,11 +35,4 @@ externalPgsql:
   existingSecret: "mcaas-postgresql-secret"
   database: "ciso-assistant"
 ingress:
-  enabled: true
-  ingressClassName: "traefik"
-  annotations:
-    cert-manager.io/cluster-issuer: selfsigned-issuer
-  tls:
-    enabled: true
-  # IMPORTANT: Replace strategos.mcaas.example.com with your actual domain.
-  # If you don't have a domain, set ingress.enabled=false and use port-forward instead.
+  enabled: false  # Using Traefik IngressRoute instead

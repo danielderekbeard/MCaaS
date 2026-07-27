@@ -1,0 +1,110 @@
+# Traefik IngressRoutes for MCaaS services
+# IMPORTANT: Must be applied AFTER deploying ServersTransport resources
+---
+# ServersTransport resources for backend TLS verification bypass
+# Required for self-signed certificates
+---
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: insecure-transport
+  namespace: security-ops
+spec:
+  insecureSkipVerify: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: insecure-transport
+  namespace: managed-it
+spec:
+  insecureSkipVerify: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: insecure-transport
+  namespace: grc
+spec:
+  insecureSkipVerify: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: insecure-transport
+  namespace: wazuh
+spec:
+  insecureSkipVerify: true
+---
+# IngressRoutes
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: shuffle-ingress
+  namespace: security-ops
+spec:
+  entryPoints:
+    - websecure
+  routes:
+  - match: Host(`shuffle.mcaas.example.com`)
+    kind: Rule
+    services:
+    - name: shuffle-frontend
+      port: 80
+      serversTransport: insecure-transport
+  tls:
+    secretName: shuffle-tls-secret
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: zammad-ingress
+  namespace: managed-it
+spec:
+  entryPoints:
+    - websecure
+  routes:
+  - match: Host(`zammad.mcaas.example.com`)
+    kind: Rule
+    services:
+    - name: mcaas-zammad-nginx
+      port: 8080
+      serversTransport: insecure-transport
+  tls:
+    secretName: zammad-tls-secret
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ciso-ingress
+  namespace: grc
+spec:
+  entryPoints:
+    - websecure
+  routes:
+  - match: Host(`ciso.mcaas.example.com`)
+    kind: Rule
+    services:
+    - name: mcaas-ciso-ciso-assistant-frontend
+      port: 80
+      serversTransport: insecure-transport
+  tls:
+    secretName: ciso-tls-secret
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: wazuh-ingress
+  namespace: wazuh
+spec:
+  entryPoints:
+    - websecure
+  routes:
+  - match: Host(`wazuh.mcaas.example.com`)
+    kind: Rule
+    services:
+    - name: dashboard
+      port: 443
+      serversTransport: insecure-transport
+  tls:
+    secretName: wazuh-external-tls-secret

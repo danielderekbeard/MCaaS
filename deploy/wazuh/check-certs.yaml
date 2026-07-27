@@ -1,0 +1,37 @@
+# Pod to check certificate files
+apiVersion: v1
+kind: Pod
+metadata:
+  name: check-certs
+  namespace: wazuh
+spec:
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+  containers:
+  - name: check
+    image: busybox
+    command:
+    - sh
+    - -c
+    - |
+      echo "Checking certificates as UID 1000..."
+      echo "=== Files in /certs ==="
+      ls -la /certs/
+      echo ""
+      echo "=== Trying to read files ==="
+      cat /certs/tls.crt | head -5 || echo "Failed to read tls.crt"
+      cat /certs/tls.key | head -5 || echo "Failed to read tls.key"
+      cat /certs/ca.crt | head -5 || echo "Failed to read ca.crt"
+      echo ""
+      echo "Done"
+      sleep 300
+    volumeMounts:
+    - name: certs
+      mountPath: /certs
+  volumes:
+  - name: certs
+    secret:
+      secretName: wazuh-indexer-certs
+      defaultMode: 384
+  restartPolicy: Never

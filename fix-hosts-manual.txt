@@ -1,0 +1,42 @@
+HOSTS FILE FIX NEEDED
+=====================
+
+THE PROBLEM:
+Your hosts file has this line that doesn't work:
+  127.0.0.1 *.mcaas.example.com
+
+This wildcard entry points all mcaas domains to localhost (127.0.0.1)
+where nothing is listening. That's why nothing loads.
+
+THE FIX:
+========
+
+Step 1: Open Notepad as Administrator
+  - Press Windows key
+  - Type "Notepad"
+  - Right-click → "Run as administrator"
+
+Step 2: Open the hosts file
+  - File → Open
+  - Navigate to: C:\Windows\System32\drivers\etc
+  - Change file type to "All Files (*.*)"
+  - Select "hosts" and open
+
+Step 3: Find and DELETE this line:
+  127.0.0.1 *.mcaas.example.com
+
+Step 4: Ensure these lines exist (add if missing):
+  192.168.127.2 shuffle.mcaas.example.com
+  192.168.127.2 zammad.mcaas.example.com
+  192.168.127.2 ciso.mcaas.example.com
+  192.168.127.2 wazuh.mcaas.example.com
+
+Step 5: Save the file (Ctrl+S)
+
+Step 6: Test in your browser
+  https://shuffle.mcaas.example.com
+
+WHY THIS HAPPENED:
+Earlier I added "127.0.0.1 *.mcaas.example.com" for testing. 
+Windows hosts file doesn't support wildcards, and it was
+overriding the real IP entries. Sorry about that!

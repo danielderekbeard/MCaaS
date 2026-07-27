@@ -38,6 +38,25 @@ IS_POSIX = PLATFORM in ("Linux", "Darwin")
 # Wazuh dashboard default password (hardcoded in upstream Wazuh K8s chart's indexer-cred secret)
 WAZUH_DEFAULT_PASSWORD = "SecretPassword"
 
+# Base manifests applied for the default (non-client) deployment, in order.
+#
+# This is an explicit list rather than a glob over deploy/*.yaml: a glob
+# silently picks up whatever else lands in that directory. It previously
+# applied cicd-service-account.yaml (which grants cluster-admin) on every run,
+# and traefik-serverstransport.yaml, which needs Traefik CRDs that this script
+# never installs — so the apply aborted the whole deployment.
+BASE_MANIFESTS = [
+    "namespaces.yaml",
+    "smtp-relay.yaml",
+]
+
+# Applied only when explicitly requested. cicd-service-account.yaml binds a
+# GitHub Actions ServiceAccount to cluster-admin and is a CI setup step, not
+# part of deploying the stack.
+OPTIONAL_MANIFESTS = {
+    "cicd": "cicd-service-account.yaml",
+}
+
 # --- Default (mcaas) Configuration ---
 # When --client is NOT specified, these values are used, preserving
 # backward-compatible behaviour identical to the original hardcoded script.
@@ -1487,7 +1506,10 @@ def load_env_file():
     env_file = PROJECT_ROOT / ".env"
     if env_file.exists():
         logging.info(f"Loading environment from {env_file}")
-        with open(env_file, "r") as f:
+        # utf-8-sig strips a leading BOM. PowerShell's Set-Content and
+        # Out-File both write one by default, which would otherwise turn the
+        # first key into "﻿MCAAS_POSTGRES_PASSWORD" and silently drop it.
+        with open(env_file, "r", encoding="utf-8-sig") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#"):
@@ -2110,8 +2132,17 @@ def generate_environment_summary(cfg: dict):
     summary_text = "\n".join(lines)
 
     # --- Write the file ---
-    summary_file = PROJECT_ROOT / f"deploy-summary-{prefix}.md"
+    # Written to .tmp/ (gitignored), NOT the repo root. This file contains live
+    # credentials; a previous version of it was committed with real PostgreSQL,
+    # OpenSearch and Django secrets in it.
+    TMP_DIR.mkdir(parents=True, exist_ok=True)
+    summary_file = TMP_DIR / f"deploy-summary-{prefix}.md"
     summary_file.write_text(summary_text, encoding="utf-8")
+    try:
+        summary_file.chmod(0o600)
+    except OSError:
+        # Best-effort: POSIX permissions are advisory on Windows.
+        pass
     logging.info(f"Deployment summary written to {summary_file}")
 
     # --- Print to console for immediate visibility ---
@@ -2132,16 +2163,18 @@ def generate_environment_summary(cfg: dict):
     print("  Local Access — add to your hosts file:")
     print(f"    127.0.0.1 {zammad_host} {ciso_host} {shuffle_host} {wazuh_host}")
     print()
-    print(f"  Secrets & Credentials:")
-    print(f"    PostgreSQL password: {postgres_pw}")
-    print(f"    OpenSearch password: {opensearch_pw}")
-    print(f"    Redis password:      {redis_pw}")
-    print(f"    Django secret key:   {django_secret}")
-    print(
-        f"    Wazuh default:       admin / {WAZUH_DEFAULT_PASSWORD}  (change immediately!)"
-    )
+    # Secret VALUES are deliberately not printed — stdout is captured in CI logs.
+    # Only the names and where to find them.
+    print("  Secrets & Credentials (values not shown):")
+    print(f"    PostgreSQL password: ${env_prefix}_POSTGRES_PASSWORD")
+    print(f"    OpenSearch password: ${env_prefix}_OPENSEARCH_PASSWORD")
+    print(f"    Redis password:      ${env_prefix}_REDIS_PASSWORD")
+    print(f"    Django secret key:   ${env_prefix}_DJANGO_SECRET_KEY")
+    print("    Wazuh default:       admin / (upstream default — change immediately!)")
     print()
-    print(f"  Full summary saved to: {summary_file}")
+    print("    Values are in .env and in the summary file below.")
+    print()
+    print(f"  Full summary (contains secrets, gitignored): {summary_file}")
     print("=" * 72 + "\n")
 
 
@@ -2245,6 +2278,14 @@ def main():
         default=None,
         help="Deploy a specific client configuration from clients/<NAME>/config.yaml",
     )
+    parser.add_argument(
+        "--with-cicd-rbac",
+        action="store_true",
+        help=(
+            "Also apply deploy/cicd-service-account.yaml, which binds a "
+            "GitHub Actions ServiceAccount to cluster-admin. Off by default."
+        ),
+    )
     args = parser.parse_args()
 
     # Set global flag for dry-run mode
@@ -2288,12 +2329,20 @@ def main():
             # for OpenAPI validation even with ``--dry-run=client``, which
             # fails when no cluster is reachable (e.g. local Windows dry-run).
             deploy_dir = PROJECT_ROOT / "deploy"
-            manifest_files = sorted(deploy_dir.glob("*.yaml"))
-            # Exclude kustomization.yaml — it is not a standalone resource.
-            manifest_files = [
-                f for f in manifest_files if f.name != "kustomization.yaml"
-            ]
+            manifest_files = [deploy_dir / name for name in BASE_MANIFESTS]
+
+            if args.with_cicd_rbac:
+                logging.warning(
+                    "--with-cicd-rbac: applying %s, which binds a ServiceAccount "
+                    "to cluster-admin.",
+                    OPTIONAL_MANIFESTS["cicd"],
+                )
+                manifest_files.append(deploy_dir / OPTIONAL_MANIFESTS["cicd"])
+
             for manifest in manifest_files:
+                if not manifest.exists():
+                    logging.error(f"Required manifest is missing: {manifest}")
+                    sys.exit(1)
                 run_command(["kubectl", "apply", "-f", str(manifest)])
 
         # Create required Kubernetes secrets (must happen BEFORE Helm installs)

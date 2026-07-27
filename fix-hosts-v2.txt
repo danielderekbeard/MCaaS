@@ -1,0 +1,33 @@
+FINAL FIX - Use 127.0.0.1
+========================
+
+THE REAL PROBLEM:
+192.168.127.2 is inside WSL and not accessible from Windows.
+
+THE REAL SOLUTION:
+Use 127.0.0.1 - Rancher Desktop's host-switch.exe proxies traffic
+from localhost to the cluster.
+
+STEPS:
+=====
+
+1. Open Notepad as Administrator
+
+2. Open C:\Windows\System32\drivers\etc\hosts
+
+3. REPLACE the 192.168.127.2 entries with:
+   
+   127.0.0.1 shuffle.mcaas.example.com
+   127.0.0.1 zammad.mcaas.example.com
+   127.0.0.1 ciso.mcaas.example.com
+   127.0.0.1 wazuh.mcaas.example.com
+
+4. Save and close
+
+5. In PowerShell (as regular user), run:
+   ipconfig /flushdns
+
+6. Test in browser:
+   https://shuffle.mcaas.example.com
+
+It should work now!

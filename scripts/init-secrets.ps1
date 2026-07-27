@@ -79,7 +79,11 @@ try {
             $env:MCAAS_OPENSEARCH_PASSWORD = New-RandomPassword
             $env:MCAAS_REDIS_PASSWORD = New-RandomPassword
             $env:MCAAS_DJANGO_SECRET_KEY = New-RandomPassword -length 50
-            Set-Content -Path $envFile -Value "MCAAS_POSTGRES_PASSWORD=$($env:MCAAS_POSTGRES_PASSWORD)`nMCAAS_OPENSEARCH_PASSWORD=$($env:MCAAS_OPENSEARCH_PASSWORD)`nMCAAS_REDIS_PASSWORD=$($env:MCAAS_REDIS_PASSWORD)`nMCAAS_DJANGO_SECRET_KEY=$($env:MCAAS_DJANGO_SECRET_KEY)"
+            # Write UTF-8 WITHOUT a BOM. Set-Content defaults to ANSI in PS 5.1
+            # and its -Encoding utf8 still emits a BOM, which corrupts the first
+            # key when deploy.py reads the file.
+            $envBody = "MCAAS_POSTGRES_PASSWORD=$($env:MCAAS_POSTGRES_PASSWORD)`nMCAAS_OPENSEARCH_PASSWORD=$($env:MCAAS_OPENSEARCH_PASSWORD)`nMCAAS_REDIS_PASSWORD=$($env:MCAAS_REDIS_PASSWORD)`nMCAAS_DJANGO_SECRET_KEY=$($env:MCAAS_DJANGO_SECRET_KEY)`n"
+            [System.IO.File]::WriteAllText($envFile, $envBody, (New-Object System.Text.UTF8Encoding($false)))
             Log "Successfully created .env with generated passwords. Please back this file up if you need to redeploy."
         } else {
             Log "ERROR: .env file exists but secrets are not loaded correctly or are missing."
@@ -96,8 +100,9 @@ try {
     if (-not $env:MCAAS_DJANGO_SECRET_KEY) {
         $env:MCAAS_DJANGO_SECRET_KEY = New-RandomPassword -length 50
         Log "Generated Django secret key"
-        # Persist to .env so redeployments reuse the same key
-        Add-Content -Path $envFile -Value "MCAAS_DJANGO_SECRET_KEY=$($env:MCAAS_DJANGO_SECRET_KEY)"
+        # Persist to .env so redeployments reuse the same key.
+        # Append as BOM-less UTF-8, matching how the file is created above.
+        [System.IO.File]::AppendAllText($envFile, "MCAAS_DJANGO_SECRET_KEY=$($env:MCAAS_DJANGO_SECRET_KEY)`n", (New-Object System.Text.UTF8Encoding($false)))
     }
 
     Log "Applying namespaces..."

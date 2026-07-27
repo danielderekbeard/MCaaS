@@ -315,7 +315,9 @@ def load_env_file():
     env_file = PROJECT_ROOT / ".env"
     if env_file.exists():
         logging.info(f"Loading environment from {env_file}")
-        with open(env_file, "r") as f:
+        # utf-8-sig strips a leading BOM written by PowerShell's Set-Content /
+        # Out-File; without it the first key is silently mangled.
+        with open(env_file, "r", encoding="utf-8-sig") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#"):

@@ -1,0 +1,51 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wazuh-tls
+  namespace: wazuh
+spec:
+  secretName: wazuh-tls-secret
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - wazuh.mcaas.example.com
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: shuffle-tls
+  namespace: security-ops
+spec:
+  secretName: shuffle-tls-secret
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - shuffle.mcaas.example.com
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: zammad-tls
+  namespace: managed-it
+spec:
+  secretName: zammad-tls-secret
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - zammad.mcaas.example.com
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ciso-tls
+  namespace: grc
+spec:
+  secretName: ciso-tls-secret
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - ciso.mcaas.example.com

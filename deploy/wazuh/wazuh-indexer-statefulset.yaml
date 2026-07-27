@@ -1,0 +1,150 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: wazuh-indexer
+  namespace: wazuh
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wazuh-indexer
+  serviceName: wazuh-indexer
+  template:
+    metadata:
+      labels:
+        app: wazuh-indexer
+      name: wazuh-indexer
+    spec:
+      securityContext:
+        fsGroup: 1000
+      volumes:
+        - name: cert-source
+          secret:
+            secretName: wazuh-indexer-certs
+        - name: certs-tmp
+          emptyDir: {}
+        - name: indexer-conf
+          configMap:
+            name: indexer-conf-46b5244fc2
+            defaultMode: 0600
+      initContainers:
+        - name: volume-mount-hack
+          image: busybox
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 100m
+              memory: 256Mi
+          command:
+            - sh
+            - '-c'
+            - 'chown -R 1000:1000 /var/lib/wazuh-indexer'
+          volumeMounts:
+            - name: wazuh-indexer
+              mountPath: /var/lib/wazuh-indexer
+        - name: increase-the-vm-max-map-count
+          image: busybox
+          command:
+            - sysctl
+            - -w
+            - vm.max_map_count=262144
+          securityContext:
+            privileged: true
+        - name: fix-certs-dir
+          image: busybox
+          securityContext:
+            runAsUser: 0
+          command:
+            - sh
+            - '-c'
+            - |
+              # Create and chown the certs directory as root
+              mkdir -p /certs
+              chown 1000:1000 /certs
+              chmod 755 /certs
+              ls -la /certs/..
+        - name: setup-certs
+          image: busybox
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+          command:
+            - sh
+            - '-c'
+            - |
+              echo "Setting up certificates as UID $(id -u)..."
+              cp /cert-source/ca.crt /certs/root-ca.pem
+              cp /cert-source/tls.crt /certs/node.pem
+              cp /cert-source/tls.key /certs/node-key.pem
+              cp /cert-source/tls.crt /certs/admin.pem
+              cp /cert-source/tls.key /certs/admin-key.pem
+              chmod 600 /certs/*.pem
+              echo "Done:"
+              ls -la /certs/
+          volumeMounts:
+            - name: certs-tmp
+              mountPath: /certs
+            - name: cert-source
+              mountPath: /cert-source
+              readOnly: true
+      containers:
+        - name: wazuh-indexer
+          image: 'wazuh/wazuh-indexer:4.14.6'
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1564Mi
+          env:
+            - name: OPENSEARCH_JAVA_OPTS
+              value: '-Xms1g -Xmx1g -Dlog4j2.formatMsgNoLookups=true'
+            - name: CLUSTER_NAME
+              value: wazuh
+            - name: NETWORK_HOST
+              value: "0.0.0.0"
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: DISCOVERY_SERVICE
+              value: wazuh-indexer
+            - name: KUBERNETES_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: DISABLE_INSTALL_DEMO_CONFIG
+              value: 'true'
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              add: ["SYS_CHROOT"]
+          volumeMounts:
+            - name: wazuh-indexer
+              mountPath: /var/lib/wazuh-indexer
+            - name: certs-tmp
+              mountPath: /usr/share/wazuh-indexer/certs
+            - name: indexer-conf
+              mountPath: /usr/share/wazuh-indexer/config/opensearch.yml
+              subPath: opensearch.yml
+              readOnly: true
+            - name: indexer-conf
+              mountPath: /usr/share/wazuh-indexer/config/opensearch-security/internal_users.yml
+              subPath: internal_users.yml
+              readOnly: true
+          ports:
+            - containerPort: 9200
+              name: indexer-rest
+            - containerPort: 9300
+              name: indexer-nodes
+  volumeClaimTemplates:
+    - metadata:
+        name: wazuh-indexer
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 500Mi
