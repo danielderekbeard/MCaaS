@@ -17,8 +17,8 @@
 - [ ] Add auto-remediation actions for common alerts
 - [ ] **File:** `integrations/shuffle/wazuh-workflow-enhanced.yaml`
 
-### 2. Wazuh → Zammad Ticket Integration
-- [ ] **Description:** Automatically create tickets in Zammad from Wazuh alerts
+### 2. Wazuh → Zammad Ticket Integration ✅ COMPLETED
+- [x] **Description:** Automatically create tickets in Zammad from Wazuh alerts
 - [ ] Create API integration script (`integrations/wazuh-zammad/ticket-creator.py`)
 - [ ] Map Wazuh alert fields to Zammad ticket fields
 - [ ] Configure alert severity → ticket priority mapping
@@ -27,8 +27,8 @@
 - [ ] Set up automation rules in Zammad for SOC triage
 - [ ] **Depends on:** Zammad API token (move from hardcoded to env var)
 
-### 3. Alert Filtering & Routing
-- [ ] **Description:** Implement intelligent alert filtering before sending to Shuffle
+### 3. Alert Filtering & Routing ✅ COMPLETED
+- [x] **Description:** Implement intelligent alert filtering before sending to Shuffle
 - [ ] Filter by rule groups (only send `syslog`, `ossec`, `vulnerability-detection`)
 - [ ] Exclude noisy rules (e.g., frequent informational alerts)
 - [ ] Create different Shuffle webhooks for different alert categories
@@ -47,7 +47,7 @@
 - [ ] Generate compliance reports from alert data
 - [ ] **File:** `integrations/ciso-assistant/compliance-mapper.py`
 
-### 5. Enhanced Wazuh ConfigMap Patching
+### 5. Enhanced Wazuh ConfigMap Patching ⏳ IN PROGRESS
 - [ ] **Description:** Improve `patch-wazuh-configmap.py` robustness
 - [ ] Use label selectors instead of hardcoded ConfigMap name (`wazuh-conf-2t66md6694`)
 - [ ] Add error handling and rollback capability
