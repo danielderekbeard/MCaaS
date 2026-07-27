@@ -1,0 +1,31 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mcaas-ciso-ingress
+  namespace: grc
+  annotations:
+    cert-manager.io/cluster-issuer: selfsigned-issuer
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: strategos.mcaas.example.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: mcaas-ciso-ciso-assistant-frontend
+            port:
+              number: 80
+        path: /
+        pathType: Prefix
+      - backend:
+          service:
+            name: mcaas-ciso-ciso-assistant-backend
+            port:
+              number: 80
+        path: /api/
+        pathType: Prefix
+  tls:
+  - hosts:
+    - strategos.mcaas.example.com
+    secretName: ciso-tls
