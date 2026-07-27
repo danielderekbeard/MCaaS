@@ -1,172 +1,161 @@
 # MCaaS Integrations
 
-This directory contains integration components for the Managed Compliance as a Service platform.
+This directory contains integration scripts and tools for the Managed Compliance as a Service (MCaaS) platform.
 
 ## Directory Structure
 
 ```
 integrations/
-├── README.md                 # This file
-├── common/                   # Shared utilities
-│   └── alert_filter.py      # Intelligent alert filtering
-├── wazuh-zammad/            # Wazuh → Zammad integration
-│   ├── ticket_creator.py    # Ticket creation script
-│   ├── webhook_server.py    # HTTP webhook receiver
-│   ├── Dockerfile           # Container image
-│   └── k8s-deployment.yaml  # Kubernetes manifests
-└── shuffle/                 # Shuffle workflow enhancements
-    └── (in development)
+├── patch-wazuh-configmap-enhanced.py  # Enhanced ConfigMap patcher with error handling
+├── shuffle/                           # Shuffle SOAR integration
+│   ├── workflow-enhancer.py          # Workflow enhancement script
+│   └── requirements.txt
+├── wazuh-zammad/                      # Wazuh to Zammad ticket integration
+│   ├── ticket-creator.py             # Ticket creation script with deduplication
+│   └── requirements.txt
+└── health/                            # Health monitoring
+    ├── health-check.py               # Integration health checker
+    └── requirements.txt
 ```
 
-## Integrations
+## Scripts
 
-### 1. Wazuh → Zammad Ticket Automation
+### patch-wazuh-configmap-enhanced.py
 
-Automatically creates tickets in Zammad from Wazuh security alerts.
+Enhanced version of the Wazuh ConfigMap patcher with comprehensive features:
 
-**Features:**
-- Deduplication (prevents duplicate tickets for same alert)
-- Severity-based priority mapping
-- Rich ticket body with alert details
-- Kubernetes-native deployment
-
-**Quick Start:**
-
-1. **Configure Zammad API token:**
-   ```bash
-   kubectl create secret generic zammad-credentials \
-     --namespace=integrations \
-     --from-literal=ZAMMAD_URL="http://alala.mcaas.example.com" \
-     --from-literal=ZAMMAD_API_TOKEN="your-token-here"
-   ```
-
-2. **Deploy the connector:**
-   ```bash
-   kubectl apply -f integrations/wazuh-zammad/k8s-deployment.yaml
-   ```
-
-3. **Test the webhook:**
-   ```bash
-   kubectl run test --rm -i --restart=Never --image=curlimages/curl \
-     -- curl -X POST http://wazuh-zammad-connector.integrations.svc/webhook/wazuh \
-     -H "Content-Type: application/json" \
-     -d '{"rule": {"id": "100001", "description": "Test Alert", "level": 5}, "agent": {"name": "test-server"}}'
-   ```
-
-**Configuration:**
-
-| Environment Variable | Description | Default |
-|---------------------|-------------|---------|
-| `ZAMMAD_URL` | Zammad instance URL | Required |
-| `ZAMMAD_API_TOKEN` | API authentication token | Required |
-| `ZAMMAD_GROUP` | Target ticket group | SOC |
-| `DEDUP_WINDOW_HOURS` | Deduplication window | 24 |
-
-### 2. Alert Filtering & Routing
-
-Intelligent filtering of Wazuh alerts before processing.
-
-**Features:**
-- Filter by rule groups
-- Exclude noisy rule IDs
-- Severity-based filtering
-- Time-based routing (e.g., after-hours alerts)
-- Custom filter rules with Python expressions
-
-**Usage:**
+- **Label Selectors**: Find ConfigMaps by labels instead of hardcoded names
+- **Error Handling**: Comprehensive exception handling with specific error types
+- **Logging**: Structured logging with configurable levels
+- **Dry-Run Mode**: Preview changes without applying
+- **Rollback**: Automatic backup and rollback capability
+- **Validation**: ConfigMap syntax validation before applying
 
 ```bash
-# Generate sample config
-python integrations/common/alert_filter.py --generate-config > filters.yaml
+# Basic usage
+python integrations/patch-wazuh-configmap-enhanced.py
 
-# Filter alerts
-python integrations/common/alert_filter.py \
-  --alert-file alert.json \
-  --config filters.yaml \
-  --stdout
+# Dry run
+python integrations/patch-wazuh-configmap-enhanced.py --dry-run
+
+# Rollback
+python integrations/patch-wazuh-configmap-enhanced.py --rollback
+
+# List backups
+python integrations/patch-wazuh-configmap-enhanced.py --list-backups
 ```
 
-**Sample Configuration:**
+### wazuh-zammad/ticket-creator.py
 
-```yaml
-min_level: 3
-max_level: 15
-excluded_rules:
-  - '5710'  # SSH brute force
-  - '5712'  # SSH scan
-included_groups:
-  - syslog
-  - ossec
-  - attack
-  - vulnerability-detection
-after_hours_only:
-  - '550'   # Informational alerts
+Creates Zammad tickets from Wazuh security alerts with deduplication:
 
-custom_filters:
-  - name: critical_to_pagerduty
-    condition: 'level >= 10'
-    action: route
-    destination: pagerduty
-    priority: 100
-```
-
-### 3. Shuffle Workflow Enhancements (TODO)
-
-Planned enhancements to the Shuffle workflow:
-- Email notifications for critical alerts
-- Slack/Teams integration
-- IP geolocation enrichment
-- Threat intelligence lookups
-
-## Architecture
-
-```
-Wazuh SIEM
-    │
-    ├───► Shuffle SOAR (via webhook)
-    │       └─── Automated workflows
-    │
-    └───► Zammad Ticketing (via webhook_server)
-            └─── SOC team triage
-```
-
-## Development
-
-### Running Tests
+- **Alert Mapping**: Maps Wazuh alerts to Zammad tickets
+- **Deduplication**: Prevents duplicate tickets using signature-based tracking
+- **Severity Mapping**: Automatic priority assignment based on alert level
+- **Markdown Formatting**: Rich ticket descriptions with alert metadata
 
 ```bash
-# Test ticket creator
-python integrations/wazuh-zammad/ticket_creator.py \
-  --alert-json '{"rule": {"id": "100", "description": "Test", "level": 5}}' \
-  --dry-run
+# Create tickets from file
+python integrations/wazuh-zammad/ticket-creator.py --alert-file alerts.json
 
-# Test alert filter
-python integrations/common/alert_filter.py --generate-config
+# Dry run to preview
+python integrations/wazuh-zammad/ticket-creator.py --alert-file alerts.json --dry-run
+
+# Cleanup old state entries
+python integrations/wazuh-zammad/ticket-creator.py --cleanup-state
 ```
 
-### Building Docker Image
+**Environment Variables:**
+- `ZAMMAD_URL` - Zammad instance URL
+- `ZAMMAD_API_TOKEN` - API authentication token
+- `ZAMMAD_GROUP_ID` - Default ticket group (default: 1)
+- `ZAMMAD_CUSTOMER_ID` - Default customer ID (default: 2)
+- `TICKET_DEDUPLICATION_WINDOW` - Hours for deduplication (default: 24)
+
+### shuffle/workflow-enhancer.py
+
+Enhances Shuffle workflows with advanced features:
+
+- **Conditional Logic**: Branching based on alert severity
+- **Email Notifications**: Critical alert emails to SOC team
+- **Slack Notifications**: SOC channel notifications
+- **Threat Intel Enrichment**: IP and hash analysis
+- **Auto-Remediation**: Automated response actions
 
 ```bash
+# Export current workflow
+python integrations/shuffle/workflow-enhancer.py --workflow-id ID --export
+
+# Enhance workflow
+python integrations/shuffle/workflow-enhancer.py --workflow-id ID
+
+# Dry run
+python integrations/shuffle/workflow-enhancer.py --workflow-id ID --dry-run
+```
+
+### health/health-check.py
+
+Comprehensive health monitoring for all integrations:
+
+- **Kubernetes Checks**: Namespace, ConfigMap, pod status
+- **Shuffle Checks**: API and webhook accessibility
+- **Zammad Checks**: API connectivity
+- **Flow Validation**: End-to-end integration testing
+
+```bash
+# Run all checks
+python integrations/health/health-check.py
+
+# Check specific integration
+python integrations/health/health-check.py --integration shuffle
+
+# JSON output
+python integrations/health/health-check.py --json
+
+# Continuous monitoring
+python integrations/health/health-check.py --continuous --interval 300
+```
+
+## Code Quality Standards
+
+All scripts follow these standards:
+
+- **Environment Variables**: All secrets via env vars (no hardcoded tokens)
+- **Error Handling**: Comprehensive try/except with specific exceptions
+- **Logging**: Structured logging with configurable levels
+- **Docstrings**: Google-style docstrings for all functions
+- **PEP 8**: Code formatted per PEP 8 style guide
+- **Type Hints**: Type annotations for function signatures
+
+## Installation
+
+```bash
+# Install dependencies for a specific integration
 cd integrations/wazuh-zammad
-docker build -t mcaas/wazuh-zammad-connector:latest .
+pip install -r requirements.txt
+
+# Or install all dependencies
+cd integrations
+pip install */requirements.txt
 ```
 
-## Security Considerations
+## Exit Codes
 
-- All API tokens are stored in Kubernetes Secrets
-- No hardcoded credentials in source code
-- Webhook endpoints should be protected (consider adding API key auth)
-- Network policies restrict pod-to-pod communication
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 2 | Configuration/missing credentials |
+| 3 | API error |
+| 4 | Validation/duplicate error |
+| 5 | Rollback failed |
 
 ## Contributing
 
-1. Create feature branch
-2. Add integration to appropriate subdirectory
-3. Include README with usage examples
-4. Submit PR for review
+When adding new integrations:
 
-## References
-
-- [Wazuh API Documentation](https://documentation.wazuh.com/current/user-manual/api/reference.html)
-- [Zammad REST API](https://docs.zammad.org/en/latest/api/intro.html)
-- [Shuffle Webhooks](https://shuffler.io/docs/webhooks)
+1. Create a subdirectory under `integrations/`
+2. Add `requirements.txt` with dependencies
+3. Include comprehensive docstrings
+4. Follow error handling patterns from existing scripts
+5. Update this README

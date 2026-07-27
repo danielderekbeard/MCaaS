@@ -1,0 +1,280 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MCaaS Integration Overview</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f8fafc;
+    --fg: #172033;
+    --muted: #5b6475;
+    --line: #64748b;
+    --neutral: #e2e8f0;
+    --input: #bfdbfe;
+    --process: #c7d2fe;
+    --storage: #99f6e4;
+    --external: #fde68a;
+    --risk: #fecaca;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a;
+      --fg: #e5e7eb;
+      --muted: #a3adbd;
+      --line: #94a3b8;
+      --neutral: #334155;
+      --input: #1d4ed8;
+      --process: #4338ca;
+      --storage: #0f766e;
+      --external: #92400e;
+      --risk: #991b1b;
+    }
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  main {
+    max-width: 1200px;
+    margin: 32px auto;
+    padding: 0 20px;
+  }
+  svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .title {
+    font-size: 20px;
+    font-weight: 650;
+    fill: var(--fg);
+  }
+  .subtitle {
+    font-size: 16px;
+    font-weight: 600;
+    fill: var(--muted);
+  }
+  .label {
+    font-size: 13px;
+    font-weight: 600;
+    fill: var(--fg);
+  }
+  .small {
+    font-size: 11px;
+    fill: var(--muted);
+  }
+  .node {
+    stroke: var(--line);
+    stroke-width: 1;
+  }
+  .neutral {
+    fill: var(--neutral);
+  }
+  .input {
+    fill: var(--input);
+  }
+  .process {
+    fill: var(--process);
+  }
+  .storage {
+    fill: var(--storage);
+  }
+  .external {
+    fill: var(--external);
+  }
+  .risk {
+    fill: var(--risk);
+  }
+  .edge {
+    stroke: var(--line);
+    stroke-width: 1.5;
+    fill: none;
+  }
+  .integration-line {
+    stroke: var(--line);
+    stroke-width: 2;
+    fill: none;
+  }
+  .zone {
+    fill: none;
+    stroke: var(--line);
+    stroke-width: 1;
+    stroke-dasharray: 6 5;
+  }
+  .zone-fill {
+    fill: var(--neutral);
+    opacity: 0.15;
+  }
+</style>
+<main>
+  <svg viewBox="0 0 1200 1000" xmlns="http://www.w3.org/2000/svg">
+    <!-- Title -->
+    <text x="600" y="40" text-anchor="middle" class="title">MCaaS Integration Architecture</text>
+
+    <!-- Wazuh Hub -->
+    <rect x="150" y="100" width="300" height="200" rx="8" class="zone-fill" />
+    <rect x="150" y="100" width="300" height="200" rx="8" class="zone" />
+    <text x="300" y="130" text-anchor="middle" class="subtitle">Wazuh SIEM & XDR</text>
+
+    <rect x="180" y="150" width="110" height="80" rx="4" class="node risk" />
+    <text x="235" y="180" text-anchor="middle" class="label">Manager</text>
+    <text x="235" y="200" text-anchor="middle" class="small">:1514/:55000</text>
+
+    <rect x="310" y="150" width="110" height="80" rx="4" class="node risk" />
+    <text x="365" y="180" text-anchor="middle" class="label">Dashboard</text>
+    <text x="365" y="200" text-anchor="middle" class="small">:443 HTTPS</text>
+
+    <!-- Shuffle Hub -->
+    <rect x="550" y="100" width="300" height="200" rx="8" class="zone-fill" />
+    <rect x="550" y="100" width="300" height="200" rx="8" class="zone" />
+    <text x="700" y="130" text-anchor="middle" class="subtitle">Shuffle SOAR</text>
+
+    <rect x="580" y="150" width="110" height="80" rx="4" class="node process" />
+    <text x="635" y="180" text-anchor="middle" class="label">Backend</text>
+    <text x="635" y="200" text-anchor="middle" class="small">:3008 HTTP</text>
+
+    <rect x="710" y="150" width="110" height="80" rx="4" class="node process" />
+    <text x="765" y="180" text-anchor="middle" class="label">Orborus</text>
+    <text x="765" y="200" text-anchor="middle" class="small">Execution</text>
+
+    <!-- Zammad Hub -->
+    <rect x="150" y="350" width="300" height="200" rx="8" class="zone-fill" />
+    <rect x="150" y="350" width="300" height="200" rx="8" class="zone" />
+    <text x="300" y="380" text-anchor="middle" class="subtitle">Zammad Helpdesk</text>
+
+    <rect x="180" y="400" width="110" height="80" rx="4" class="node process" />
+    <text x="235" y="430" text-anchor="middle" class="label">Web</text>
+    <text x="235" y="450" text-anchor="middle" class="small">:80 HTTP</text>
+
+    <rect x="310" y="400" width="110" height="80" rx="4" class="node process" />
+    <text x="365" y="430" text-anchor="middle" class="label">API</text>
+    <text x="365" y="450" text-anchor="middle" class="small">/api/v1</text>
+
+    <!-- CISO Assistant Hub -->
+    <rect x="550" y="350" width="300" height="200" rx="8" class="zone-fill" />
+    <rect x="550" y="350" width="300" height="200" rx="8" class="zone" />
+    <text x="700" y="380" text-anchor="middle" class="subtitle">CISO Assistant</text>
+
+    <rect x="580" y="400" width="110" height="80" rx="4" class="node process" />
+    <text x="635" y="430" text-anchor="middle" class="label">Frontend</text>
+    <text x="635" y="450" text-anchor="middle" class="small">:443 HTTPS</text>
+
+    <rect x="710" y="400" width="110" height="80" rx="4" class="node process" />
+    <text x="765" y="430" text-anchor="middle" class="label">Backend</text>
+    <text x="765" y="450" text-anchor="middle" class="small">:8443 API</text>
+
+    <!-- Data Stores -->
+    <rect x="900" y="100" width="250" height="200" rx="8" class="zone-fill" />
+    <rect x="900" y="100" width="250" height="200" rx="8" class="zone" />
+    <text x="1025" y="130" text-anchor="middle" class="subtitle">Data Stores</text>
+
+    <rect x="920" y="150" width="210" height="50" rx="4" class="node storage" />
+    <text x="1025" y="175" text-anchor="middle" class="label">OpenSearch</text>
+    <text x="1025" y="190" text-anchor="middle" class="small">:9200 Indexer</text>
+
+    <rect x="920" y="210" width="210" height="50" rx="4" class="node storage" />
+    <text x="1025" y="235" text-anchor="middle" class="label">PostgreSQL</text>
+    <text x="1025" y="250" text-anchor="middle" class="small">:5432 Database</text>
+
+    <!-- Integration Lines -->
+    <!-- Wazuh -> Shuffle (Webhook) -->
+    <path d="M 420 180 Q 480 180 580 180" class="integration-line" marker-end="url(#arrow)" />
+    <rect x="450" y="140" width="100" height="25" rx="2" class="node input" />
+    <text x="500" y="155" text-anchor="middle" class="small" style="font-size: 10px;">Webhook POST</text>
+
+    <!-- Shuffle -> Zammad (API) -->
+    <path d="M 580 250 Q 450 250 300 280 L 300 350" class="integration-line" marker-end="url(#arrow)" />
+    <rect x="380" y="285" width="100" height="25" rx="2" class="node input" />
+    <text x="430" y="300" text-anchor="middle" class="small" style="font-size: 10px;">API Create Ticket</text>
+
+    <!-- Shuffle -> OpenSearch -->
+    <path d="M 690 150 L 690 130 L 920 130" class="integration-line" marker-end="url(#arrow)" />
+
+    <!-- Zammad -> PostgreSQL -->
+    <path d="M 420 400 L 920 260" class="integration-line" marker-end="url(#arrow)" />
+
+    <!-- CISO Assistant -> PostgreSQL -->
+    <path d="M 580 400 L 700 380 L 920 260" class="integration-line" marker-end="url(#arrow)" />
+
+    <!-- Integration Details Table -->
+    <rect x="50" y="600" width="1100" height="350" rx="8" stroke="var(--line)" fill="none" />
+    <text x="600" y="630" text-anchor="middle" class="title" style="font-size: 18px;">Integration Specifications</text>
+
+    <!-- Table Headers -->
+    <line x1="70" y1="645" x2="1130" y2="645" stroke="var(--line)" />
+    <text x="80" y="665" class="label">Source</text>
+    <text x="250" y="665" class="label">Target</text>
+    <text x="400" y="665" class="label">Protocol</text>
+    <text x="550" y="665" class="label">Auth</text>
+    <text x="700" y="665" class="label">Purpose</text>
+    <text x="950" y="665" class="label">Status</text>
+
+    <line x1="70" y1="675" x2="1130" y2="675" stroke="var(--line)" />
+
+    <!-- Row 1 -->
+    <text x="80" y="700" class="small">Wazuh Manager</text>
+    <text x="250" y="700" class="small">Shuffle</text>
+    <text x="400" y="700" class="small">HTTP POST Webhook</text>
+    <text x="550" y="700" class="small">None (IP allow)</text>
+    <text x="700" y="700" class="small">Alert forwarding</text>
+    <text x="950" y="700" class="small">Configured</text>
+
+    <!-- Row 2 -->
+    <text x="80" y="730" class="small">Shuffle</text>
+    <text x="250" y="730" class="small">Zammad</text>
+    <text x="400" y="730" class="small">HTTP REST API</text>
+    <text x="550" y="730" class="small">API Token</text>
+    <text x="700" y="730" class="small">Create tickets</text>
+    <text x="950" y="730" class="small">Configured</text>
+
+    <!-- Row 3 -->
+    <text x="80" y="760" class="small">Shuffle</text>
+    <text x="250" y="760" class="small">OpenSearch</text>
+    <text x="400" y="760" class="small">HTTPS REST</text>
+    <text x="550" y="760" class="small">Basic Auth</text>
+    <text x="700" y="760" class="small">SOAR data storage</text>
+    <text x="950" y="760" class="small">Configured</text>
+
+    <!-- Row 4 -->
+    <text x="80" y="790" class="small">Zammad</text>
+    <text x="250" y="790" class="small">PostgreSQL</text>
+    <text x="400" y="790" class="small">TCP PostgreSQL</text>
+    <text x="550" y="790" class="small">K8s Secret</text>
+    <text x="700" y="790" class="small">Ticket persistence</text>
+    <text x="950" y="790" class="small">Configured</text>
+
+    <!-- Row 5 -->
+    <text x="80" y="820" class="small">CISO Assistant</text>
+    <text x="250" y="820" class="small">PostgreSQL</text>
+    <text x="400" y="820" class="small">TCP PostgreSQL</text>
+    <text x="550" y="820" class="small">K8s Secret (x-namespace)</text>
+    <text x="700" y="820" class="small">GRC data persistence</text>
+    <text x="950" y="820" class="small">Configured</text>
+
+    <!-- Row 6 -->
+    <text x="80" y="850" class="small">Shuffle</text>
+    <text x="250" y="850" class="small">Wazuh API</text>
+    <text x="400" y="850" class="small">HTTPS REST</text>
+    <text x="550" y="850" class="small">Basic Auth</text>
+    <text x="700" y="850" class="small">Alert enrichment</text>
+    <text x="950" y="850" class="small">Planned</text>
+
+    <!-- Row 7 -->
+    <text x="80" y="880" class="small">Shuffle</text>
+    <text x="250" y="880" class="small">SMTP Relay</text>
+    <text x="400" y="880" class="small">SMTP :25</text>
+    <text x="550" y="880" class="small">None (internal)</text>
+    <text x="700" y="880" class="small">Email notifications</text>
+    <text x="950" y="880" class="small">Configured</text>
+
+    <!-- Row 8 -->
+    <text x="80" y="910" class="small">SMTP Relay</text>
+    <text x="250" y="910" class="small">Zoho Mail</text>
+    <text x="400" y="910" class="small">SMTP+STARTTLS :587</text>
+    <text x="550" y="910" class="small">SASL Auth</text>
+    <text x="700" y="910" class="small">External mail relay</text>
+    <text x="950" y="910" class="small">Configured</text>
+  </svg>
+</main>
