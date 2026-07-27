@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: integrations
+  labels:
+    name: integrations
+---
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: ciso-assistant-credentials
+  namespace: integrations
+stringData:
+  CISO_ASSISTANT_URL: "http://strategos.mcaas.example.com"
+  CISO_ASSISTANT_API_KEY: "REPLACE_WITH_ACTUAL_API_KEY"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ciso-assistant-config
+  namespace: integrations
+data:
+  DEFAULT_FRAMEWORK: "iso27001"
+  AUTO_CREATE_FINDINGS: "true"
+  LOG_LEVEL: "INFO"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ciso-assistant-connector
+  namespace: integrations
+  labels:
+    app: ciso-assistant-connector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ciso-assistant-connector
+  template:
+    metadata:
+      labels:
+        app: ciso-assistant-connector
+    spec:
+      containers:
+      - name: connector
+        image: python:3.11-slim
+        command: ["python", "/app/compliance_mapper.py"]
+        envFrom:
+        - secretRef:
+            name: ciso-assistant-credentials
+        - configMapRef:
+            name: ciso-assistant-config
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        volumeMounts:
+        - name: app-code
+          mountPath: /app
+        stdin: true
+        tty: true
+      volumes:
+      - name: app-code
+        configMap:
+          name: ciso-assistant-scripts
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ciso-assistant-connector
+  namespace: integrations
+spec:
+  selector:
+    app: ciso-assistant-connector
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: ClusterIP

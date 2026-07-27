@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: multi-channel-credentials
+  namespace: integrations
+stringData:
+  TEAMS_WEBHOOK_URL: "REPLACE_WITH_TEAMS_WEBHOOK"
+  SLACK_WEBHOOK_URL: "REPLACE_WITH_SLACK_WEBHOOK"
+  PAGERDUTY_ROUTING_KEY: "REPLACE_WITH_PD_ROUTING_KEY"
+  SMTP_HOST: "smtp.mcaas.example.com"
+  SMTP_PORT: "587"
+  SMTP_USER: "REPLACE_WITH_SMTP_USER"
+  SMTP_PASS: "REPLACE_WITH_SMTP_PASS"
+  SMTP_FROM: "alerts@mcaas.example.com"
+  SOC_EMAIL: "soc@mcaas.example.com"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: multi-channel-config
+  namespace: integrations
+data:
+  LISTEN_PORT: "8081"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multi-channel-alert-distributor
+  namespace: integrations
+  labels:
+    app: multi-channel-alert-distributor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: multi-channel-alert-distributor
+  template:
+    metadata:
+      labels:
+        app: multi-channel-alert-distributor
+    spec:
+      containers:
+      - name: distributor
+        image: python:3.11-slim
+        command: ["python", "/app/webhook_handler.py"]
+        envFrom:
+        - secretRef:
+            name: multi-channel-credentials
+        - configMapRef:
+            name: multi-channel-config
+        ports:
+        - containerPort: 8081
+          name: http
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        volumeMounts:
+        - name: app-code
+          mountPath: /app
+      volumes:
+      - name: app-code
+        configMap:
+          name: multi-channel-scripts
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: multi-channel-alert-distributor
+  namespace: integrations
+spec:
+  selector:
+    app: multi-channel-alert-distributor
+  ports:
+  - port: 80
+    targetPort: 8081
+    name: http
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: multi-channel-alert-distributor
+  namespace: integrations
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+  - host: alerts.mcaas.example.com
+    http:
+      paths:
+      - path: /webhook
+        pathType: Prefix
+        backend:
+          service:
+            name: multi-channel-alert-distributor
+            port:
+              number: 80

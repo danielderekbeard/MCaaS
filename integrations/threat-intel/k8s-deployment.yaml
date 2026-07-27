@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: threat-intel-credentials
+  namespace: integrations
+stringData:
+  VIRUSTOTAL_API_KEY: "REPLACE_WITH_VT_API_KEY"
+  ABUSEIPDB_API_KEY: "REPLACE_WITH_ABUSEIPDB_API_KEY"
+  MISP_URL: "http://misp.mcaas.example.com"
+  MISP_API_KEY: "REPLACE_WITH_MISP_API_KEY"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: threat-intel-config
+  namespace: integrations
+data:
+  ENRICHMENT_CACHE_TTL: "3600"
+  LOG_LEVEL: "INFO"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: threat-intel-enricher
+  namespace: integrations
+  labels:
+    app: threat-intel-enricher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: threat-intel-enricher
+  template:
+    metadata:
+      labels:
+        app: threat-intel-enricher
+    spec:
+      containers:
+      - name: enricher
+        image: python:3.11-slim
+        command: ["python", "/app/enricher.py"]
+        envFrom:
+        - secretRef:
+            name: threat-intel-credentials
+        - configMapRef:
+            name: threat-intel-config
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: app-code
+          mountPath: /app
+      volumes:
+      - name: app-code
+        configMap:
+          name: threat-intel-scripts
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: threat-intel-enricher
+  namespace: integrations
+spec:
+  selector:
+    app: threat-intel-enricher
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: ClusterIP
