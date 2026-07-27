@@ -16,6 +16,7 @@ import platform
 import shutil
 import secrets
 import string
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 import argparse
@@ -25,9 +26,11 @@ import yaml
 
 # --- Configuration ---
 SCRIPT_ROOT = Path(__file__).parent.resolve()
-PROJECT_ROOT = SCRIPT_ROOT  # The script is in the project root
-LOG_DIR = PROJECT_ROOT / "logs"
-TMP_DIR = PROJECT_ROOT / ".tmp"
+PROJECT_ROOT = (
+    SCRIPT_ROOT.parent
+)  # Script lives in scripts/; project root is one level up
+LOG_DIR = SCRIPT_ROOT / "logs"
+TMP_DIR = SCRIPT_ROOT / ".tmp"
 
 # Detect platform
 PLATFORM = platform.system()
@@ -89,7 +92,7 @@ def load_client_config(client_name: str | None) -> dict:
 
     The returned dict always contains at least:
       - ``prefix``               – resource name prefix (e.g. ``"mcaas"`` or ``"acme"``)
-      - ``namespaces``           – mapping of base→full namespace names
+      - ``namespaces``           – mapping of base->full namespace names
       - ``domain``               – domain suffix
       - ``database_name``        – PostgreSQL database name
       - ``wazuh_version``        – Wazuh version tag
@@ -352,7 +355,7 @@ def find_openssl() -> str | None:
         git_path = shutil.which("git")
         if git_path:
             git_dir = Path(git_path).parent
-            # Typical layout: C:\Program Files\Git\cmd\git.exe → parent = …\Git\cmd
+            # Typical layout: C:\Program Files\Git\cmd\git.exe -> parent = …\Git\cmd
             # The openssl binary lives under …\Git\mingw64\bin or …\Git\usr\bin
             git_root = git_dir.parent  # …\Git
             for candidate in [
@@ -891,6 +894,7 @@ def deploy_ingress_controller(cfg):
     Args:
         cfg: Client configuration dict from :func:`load_client_config`.
     """
+    TMP_DIR.mkdir(parents=True, exist_ok=True)
     logging.info("Installing cert-manager...")
 
     # Install cert-manager via kubectl apply (official static manifest).
@@ -1224,8 +1228,8 @@ def _patch_wazuh_dashboard_http(cfg):
     cause TLS handshake failures.
 
     This function patches the dashboard ConfigMap to disable SSL and then
-    patches the Service to expose port 80 → 5601 (HTTP) instead of
-    443 → 5601 (HTTPS). After patching, it restarts the dashboard deployment
+    patches the Service to expose port 80 -> 5601 (HTTP) instead of
+    443 -> 5601 (HTTPS). After patching, it restarts the dashboard deployment
     so the new configuration takes effect.
 
     Args:
@@ -1236,29 +1240,52 @@ def _patch_wazuh_dashboard_http(cfg):
     logging.info("Patching Wazuh dashboard ConfigMap to disable SSL...")
 
     # Get the current dashboard ConfigMap name (it has a hash suffix).
-    cm_result = run_command(
-        [
-            "kubectl",
-            "get",
-            "configmap",
-            "-n",
-            wazuh_ns,
-            "-l",
-            "app=wazuh-dashboard",
-            "-o",
-            "jsonpath={.items[0].metadata.name}",
-        ],
-        check=False,
-    )
-    if not cm_result or cm_result.returncode != 0:
+    # Retry a few times because the ConfigMap may not exist immediately.
+    # NOTE: The Wazuh kustomize deployment creates ConfigMaps without labels,
+    # so we cannot use a label selector. Instead, we find by name prefix
+    # "dashboard-conf-" which is the naming convention used by the upstream
+    # wazuh-kubernetes repository.
+
+    cm_name = None
+    for attempt in range(1, 7):  # up to 6 retries, ~90s total
+        cm_result = run_command(
+            [
+                "kubectl",
+                "get",
+                "configmap",
+                "-n",
+                wazuh_ns,
+                "-o",
+                "name",
+            ],
+            check=False,
+        )
+        if cm_result and cm_result.returncode == 0 and cm_result.stdout.strip():
+            # Parse the output to find the dashboard ConfigMap.
+            # Output format is one "configmap/<name>" per line.
+            for line in cm_result.stdout.strip().splitlines():
+                name = line.strip()
+                if name.startswith("configmap/"):
+                    name = name[len("configmap/") :]
+                if name.startswith("dashboard-conf-"):
+                    cm_name = name
+                    break
+            if cm_name:
+                break
+        logging.info(
+            "Wazuh dashboard ConfigMap not found (attempt %d/6); "
+            "waiting 15s for resources to be created...",
+            attempt,
+        )
+        time.sleep(15)
+
+    if not cm_name:
         logging.warning(
-            "Could not find Wazuh dashboard ConfigMap; skipping SSL patch. "
-            "The dashboard may serve HTTPS internally, which can cause TLS "
-            "errors when Traefik routes traffic to it."
+            "Could not find Wazuh dashboard ConfigMap after 6 retries; "
+            "skipping SSL patch. The dashboard may serve HTTPS internally, "
+            "which can cause TLS errors when Traefik routes traffic to it."
         )
         return
-
-    cm_name = cm_result.stdout.strip()
     logging.info(f"Found dashboard ConfigMap: {cm_name}")
 
     # Patch the ConfigMap: disable server.ssl.enabled and remove SSL cert/key lines.
@@ -1354,7 +1381,7 @@ def _patch_wazuh_manager_memory(cfg):
     """
     wazuh_ns = cfg["namespaces"]["wazuh"]
 
-    logging.info("Patching Wazuh manager StatefulSet memory limits (512Mi → 2Gi)...")
+    logging.info("Patching Wazuh manager StatefulSet memory limits (512Mi -> 2Gi)...")
     run_command(
         [
             "kubectl",
@@ -1431,7 +1458,7 @@ def _patch_wazuh_manager_spec(cfg):
     — strips the container spec down to only the fields it knows about (image,
     name, resources, terminationMessagePolicy), discarding env vars, ports,
     volumeMounts, and securityContext.  This leaves Filebeat unable to connect
-    to the indexer (no INDEXER_URL env var → filebeat.yml defaults to the
+    to the indexer (no INDEXER_URL env var -> filebeat.yml defaults to the
     upstream ``wazuh.indexer`` hostname which doesn't resolve on k3s).
 
     We apply a strategic merge patch from
@@ -2370,6 +2397,10 @@ def main():
         # that Ingress resources can obtain TLS certificates automatically.
         deploy_ingress_controller(cfg)
 
+        # --- Infrastructure: hard-fail components ---
+        # PostgreSQL and OpenSearch are foundational; if they fail, nothing
+        # else will work, so we abort immediately.
+
         logging.info("Deploying PostgreSQL...")
         run_command(
             [
@@ -2408,151 +2439,198 @@ def main():
         )
         wait_for_resource(ns["security-ops"], f"{prefix}-opensearch")
 
-        # Clone or prepare Wazuh repo
-        wazuh_dir = TMP_DIR / "wazuh-kubernetes"
-        wazuh_clone_result = clone_or_use_wazuh_repo(wazuh_dir)
-        # If the clone failed, wazuh_clone_result is None; fall back to
-        # the directory Path anyway so deploy_wazuh can attempt a remote URL.
-        effective_wazuh_dir = (
-            wazuh_clone_result if wazuh_clone_result is not None else wazuh_dir
-        )
+        # --- Services: best-effort components ---
+        # Each service is deployed in its own try/except so that a failure
+        # in one does not block the others.  We track which components
+        # failed and report them at the end.
 
-        # Deploy Wazuh
-        deploy_wazuh(effective_wazuh_dir, cfg)
+        failed_components: list[str] = []
 
-        logging.info("Waiting for Wazuh components to be ready...")
-        run_command(
-            [
-                "kubectl",
-                "wait",
-                "--for=condition=ready",
-                "pod",
-                "-l",
-                "app=wazuh-manager",
-                "-n",
-                ns["wazuh"],
-                "--timeout=10m",
-            ],
-            check=False,
-        )
-        run_command(
-            [
-                "kubectl",
-                "wait",
-                "--for=condition=ready",
-                "pod",
-                "-l",
-                "app=wazuh-indexer",
-                "-n",
-                ns["wazuh"],
-                "--timeout=10m",
-            ],
-            check=False,
-        )
-        run_command(
-            [
-                "kubectl",
-                "wait",
-                "--for=condition=ready",
-                "pod",
-                "-l",
-                "app=wazuh-dashboard",
-                "-n",
-                ns["wazuh"],
-                "--timeout=10m",
-            ],
-            check=False,
-        )
+        # ---- Wazuh ----
+        try:
+            # Clone or prepare Wazuh repo
+            wazuh_dir = TMP_DIR / "wazuh-kubernetes"
+            wazuh_clone_result = clone_or_use_wazuh_repo(wazuh_dir)
+            # If the clone failed, wazuh_clone_result is None; fall back to
+            # the directory Path anyway so deploy_wazuh can attempt a remote URL.
+            effective_wazuh_dir = (
+                wazuh_clone_result if wazuh_clone_result is not None else wazuh_dir
+            )
 
-        logging.info("Deploying Shuffle (OCI chart)...")
-        run_command(
-            [
-                "helm",
-                "upgrade",
-                "--install",
-                f"{prefix}-shuffle",
-                "oci://ghcr.io/shuffle/charts/shuffle",
-                "--namespace",
-                ns["security-ops"],
-                "--values",
-                str(values_dir / "shuffle.yaml"),
-                "--wait",
-                "--timeout",
-                "10m",
-            ]
-        )
-        wait_for_resource(ns["security-ops"], f"{prefix}-shuffle")
+            # Deploy Wazuh
+            deploy_wazuh(effective_wazuh_dir, cfg)
 
-        # Create the zammad database in PostgreSQL before deploying.
-        # Zammad's init job needs this database to exist when
-        # zammadConfig.postgresql.enabled=false and an external DB is used.
-        logging.info("Creating zammad database in PostgreSQL...")
-        _create_database(
-            f"{prefix}-postgresql-0",
-            ns["managed-it"],
-            "zammad",
-            f"{prefix}-postgresql-secret",
-            "postgres-password",
-        )
+            logging.info("Waiting for Wazuh components to be ready...")
+            run_command(
+                [
+                    "kubectl",
+                    "wait",
+                    "--for=condition=ready",
+                    "pod",
+                    "-l",
+                    "app=wazuh-manager",
+                    "-n",
+                    ns["wazuh"],
+                    "--timeout=10m",
+                ],
+                check=False,
+            )
+            run_command(
+                [
+                    "kubectl",
+                    "wait",
+                    "--for=condition=ready",
+                    "pod",
+                    "-l",
+                    "app=wazuh-indexer",
+                    "-n",
+                    ns["wazuh"],
+                    "--timeout=10m",
+                ],
+                check=False,
+            )
+            run_command(
+                [
+                    "kubectl",
+                    "wait",
+                    "--for=condition=ready",
+                    "pod",
+                    "-l",
+                    "app=wazuh-dashboard",
+                    "-n",
+                    ns["wazuh"],
+                    "--timeout=10m",
+                ],
+                check=False,
+            )
+        except Exception as e:
+            logging.error(f"Wazuh deployment failed: {e}")
+            failed_components.append("Wazuh")
 
-        logging.info("Deploying Zammad (OCI chart)...")
-        run_command(
-            [
-                "helm",
-                "upgrade",
-                "--install",
-                f"{prefix}-zammad",
-                "oci://ghcr.io/zammad/charts/zammad",
-                "--namespace",
+        # ---- Shuffle ----
+        try:
+            logging.info("Deploying Shuffle (OCI chart)...")
+            run_command(
+                [
+                    "helm",
+                    "upgrade",
+                    "--install",
+                    f"{prefix}-shuffle",
+                    "oci://ghcr.io/shuffle/charts/shuffle",
+                    "--namespace",
+                    ns["security-ops"],
+                    "--values",
+                    str(values_dir / "shuffle.yaml"),
+                    "--wait",
+                    "--timeout",
+                    "10m",
+                ]
+            )
+            wait_for_resource(ns["security-ops"], f"{prefix}-shuffle")
+        except Exception as e:
+            logging.error(f"Shuffle deployment failed: {e}")
+            failed_components.append("Shuffle")
+
+        # ---- Zammad ----
+        try:
+            # Create the zammad database in PostgreSQL before deploying.
+            # Zammad's init job needs this database to exist when
+            # zammadConfig.postgresql.enabled=false and an external DB is used.
+            logging.info("Creating zammad database in PostgreSQL...")
+            _create_database(
+                f"{prefix}-postgresql-0",
                 ns["managed-it"],
-                "--values",
-                str(values_dir / "zammad.yaml"),
-                "--wait",
-                "--timeout",
-                "15m",
-            ]
-        )
-        wait_for_resource(ns["managed-it"], f"{prefix}-zammad-railsserver")
+                "zammad",
+                f"{prefix}-postgresql-secret",
+                "postgres-password",
+            )
 
-        # Create the ciso-assistant database in PostgreSQL before deploying.
-        logging.info("Creating ciso-assistant database in PostgreSQL...")
-        _create_database(
-            f"{prefix}-postgresql-0",
-            ns["managed-it"],
-            "ciso-assistant",
-            f"{prefix}-postgresql-secret",
-            "postgres-password",
-        )
+            logging.info("Deploying Zammad (OCI chart)...")
+            run_command(
+                [
+                    "helm",
+                    "upgrade",
+                    "--install",
+                    f"{prefix}-zammad",
+                    "oci://ghcr.io/zammad/charts/zammad",
+                    "--namespace",
+                    ns["managed-it"],
+                    "--values",
+                    str(values_dir / "zammad.yaml"),
+                    "--wait",
+                    "--timeout",
+                    "15m",
+                ]
+            )
+            wait_for_resource(ns["managed-it"], f"{prefix}-zammad-railsserver")
+        except Exception as e:
+            logging.error(f"Zammad deployment failed: {e}")
+            failed_components.append("Zammad")
 
-        logging.info("Deploying CISO Assistant (OCI chart)...")
-        run_command(
-            [
-                "helm",
-                "upgrade",
-                "--install",
-                f"{prefix}-ciso",
-                "oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant",
-                "--version",
-                "0.11.4",
-                "--namespace",
-                ns["grc"],
-                "--values",
-                str(values_dir / "ciso-assistant.yaml"),
-                "--wait",
-                "--timeout",
-                "10m",
-            ]
-        )
-        wait_for_resource(ns["grc"], f"{prefix}-ciso")
+        # ---- CISO Assistant ----
+        try:
+            # Create the ciso-assistant database in PostgreSQL before deploying.
+            logging.info("Creating ciso-assistant database in PostgreSQL...")
+            _create_database(
+                f"{prefix}-postgresql-0",
+                ns["managed-it"],
+                "ciso-assistant",
+                f"{prefix}-postgresql-secret",
+                "postgres-password",
+            )
 
-        # Deploy Ingress resources for Shuffle and Wazuh Dashboard.
-        # (Zammad and CISO Assistant ingress are managed by their Helm charts.)
-        deploy_ingress_resources(cfg)
+            logging.info("Deploying CISO Assistant (OCI chart)...")
+            run_command(
+                [
+                    "helm",
+                    "upgrade",
+                    "--install",
+                    f"{prefix}-ciso",
+                    "oci://ghcr.io/intuitem/helm-charts/ce/ciso-assistant",
+                    "--version",
+                    "0.11.4",
+                    "--namespace",
+                    ns["grc"],
+                    "--values",
+                    str(values_dir / "ciso-assistant.yaml"),
+                    "--wait",
+                    "--timeout",
+                    "10m",
+                ]
+            )
+            wait_for_resource(ns["grc"], f"{prefix}-ciso")
+        except Exception as e:
+            logging.error(f"CISO Assistant deployment failed: {e}")
+            failed_components.append("CISO Assistant")
 
-        logging.info("Deployment complete!")
+        # ---- Ingress resources (always attempt) ----
+        try:
+            # Deploy Ingress resources for Shuffle and Wazuh Dashboard.
+            # (Zammad and CISO Assistant ingress are managed by their Helm charts.)
+            deploy_ingress_resources(cfg)
+        except Exception as e:
+            logging.error(f"Ingress deployment failed: {e}")
+            failed_components.append("Ingress")
 
-        # Generate environment-specific summary file with secrets, URLs & credentials
-        generate_environment_summary(cfg)
+        # ---- Environment summary (always attempt) ----
+        try:
+            generate_environment_summary(cfg)
+        except Exception as e:
+            logging.error(f"Environment summary generation failed: {e}")
+            failed_components.append("Environment Summary")
+
+        if failed_components:
+            logging.warning(
+                "Deployment completed with failures: %s",
+                ", ".join(failed_components),
+            )
+            logging.info(
+                "Infrastructure (namespaces, secrets, cert-manager, PostgreSQL, "
+                "OpenSearch) is running. Check the failed components above and "
+                "re-run or fix individually."
+            )
+        else:
+            logging.info("Deployment complete!")
 
     except Exception as e:
         logging.error(f"An error occurred during deployment: {e}")

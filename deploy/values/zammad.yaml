@@ -28,6 +28,40 @@ zammadConfig:
     host: "mcaas-zammad-redis"
     port: 6379
     pass: "zammad"  # Only a boolean trigger; actual password comes from K8s secret
+  # Fix: The Zammad chart defaults to readOnlyRootFilesystem: true on all
+  # containers. This prevents Zammad from writing to /opt/zammad (its own
+  # installation dir). Zammad's startup script checks if /opt/zammad is
+  # writable and exits if not. Disable this for local k3s deployments.
+  initContainers:
+    volumePermissions:
+      securityContext:
+        readOnlyRootFilesystem: false
+      command:
+        - /bin/sh
+        - -cx
+        - |
+          chown -R 1000:1000 /opt/zammad
+          chmod 770 /opt/zammad/tmp
+
+railsserver:
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+
+scheduler:
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+
+websocket:
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+
+nginx:
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
 
 # Use existing secrets for PostgreSQL and Redis
 secrets:
